@@ -51,13 +51,13 @@
 
 
 #include "FastLED.h"
-
+FASTLED_USING_NAMESPACE
 
 /* </FastLED implementation> */
 
-#define DEFAULT_BRIGHTNESS 255
+#define DEFAULT_BRIGHTNESS 200
 #define DEFAULT_MODE 1
-#define DEFAULT_BEAT88 255
+#define DEFAULT_BEAT88 1000
 #define DEFAULT_COLOR 0xFF0000
 #define DEFAULT_DELTAHUE 1
 #define DEFAULT_HUETIME 500;
@@ -104,7 +104,6 @@
 
 
 enum MODES {
-  FX_MODE_OFF,
   FX_MODE_STATIC,
   FX_MODE_EASE,
   FX_MODE_TWINKLE_EASE,
@@ -158,7 +157,10 @@ extern const TProgmemRGBPalette16
       BlueWhite_p, 
       RedWhite_p, 
       Holly_p, 
-      RedGreenWhite_p;
+      RedGreenWhite_p,
+      Shades_Of_Red_p,
+      Shades_Of_Green_p,
+      Shades_Of_Blue_p;
 
 
 
@@ -181,6 +183,9 @@ enum PALETTES
   REDWHITHE_PAL, 
   HOLLY_PAL, 
   REDGREENWHITE_PAL,
+  SHADES_OF_RED_PAL,
+  SHADES_OF_GREEN_PAL,
+  SHADES_OF_BLUE_PAL,
 
   NUM_PALETTES
   
@@ -199,24 +204,37 @@ class WS2812FX {
   // segment parameters
   public:
     typedef struct segment {
-      uint8_t  mode;
-      CRGBPalette16 cPalette;
-      uint16_t beat88;
-      uint16_t start;
-      uint16_t stop;
-      uint8_t  deltaHue;
-      uint16_t hueTime;
-      TBlendType blendType;
-      bool     reverse;
+      bool            reverse;
+      bool            autoplay;
+      bool            autoPal;
+      uint16_t        beat88;
+      uint16_t        start;
+      uint16_t        stop;
+      uint16_t        hueTime;
+      uint16_t        milliamps;
+      uint16_t        autoplayDuration;
+      uint16_t        autoPalDuration;
+      uint8_t         cooling;
+      uint8_t         sparking;
+      uint8_t         twinkleSpeed;
+      uint8_t         twinkleDensity;
+      uint8_t         mode;
+      uint8_t          deltaHue;
+      TBlendType      blendType;
+      //CRGBPalette16   cPalette;
+      //uint16_t        CRC;
     } segment;
 
   // segment runtime parameters
   typedef struct segment_runtime {
-    uint32_t timebase;
-    uint32_t counter_mode_step;
+    uint32_t      timebase;
+    uint32_t      counter_mode_step;
     unsigned long next_time;
-    uint16_t aux_param;
-    uint8_t baseHue;
+    uint16_t      aux_param;
+    uint8_t       baseHue;
+    uint32_t      nextHue;
+    uint32_t      nextAuto;
+    uint32_t      nextPalette;
   } segment_runtime;
 
   public:
@@ -234,7 +252,6 @@ class WS2812FX {
       FastLED.addLeds<WS2812,LED_PIN, GRB>(leds, num_leds);//NUM_LEDS);
       FastLED.setCorrection(colc); //TypicalLEDStrip);
       _currentPalette = CRGBPalette16(CRGB::Black);
-      FastLED.setMaxPowerInVoltsAndMilliamps(volt, milliamps);
       
       FastLED.setMaxRefreshRate(fps);
       _fps = fps;
@@ -244,7 +261,6 @@ class WS2812FX {
       FastLED.clear(true);
       FastLED.show();
 
-      _mode[FX_MODE_OFF]                     = &WS2812FX::mode_off;
       _mode[FX_MODE_STATIC]                  = &WS2812FX::mode_static;
       _mode[FX_MODE_TWINKLE_EASE]            = &WS2812FX::mode_twinkle_ease;
       _mode[FX_MODE_EASE]                    = &WS2812FX::mode_ease;
@@ -284,8 +300,6 @@ class WS2812FX {
       _mode[FX_MODE_BUBBLE_SORT]             = &WS2812FX::mode_bubble_sort;
       _mode[FX_MODE_CUSTOM]                  = &WS2812FX::mode_custom;
       
-
-      _name[FX_MODE_OFF]                        = F("Off");
       _name[FX_MODE_STATIC]                     = F("Static");
       _name[FX_MODE_EASE]                       = F("Ease");
       _name[FX_MODE_TWINKLE_EASE]               = F("Ease Twinkle");
@@ -342,6 +356,9 @@ class WS2812FX {
       _pal_name[REDWHITHE_PAL]      = F("Red White Colors");
       _pal_name[HOLLY_PAL]          = F("Holly Colors");
       _pal_name[REDGREENWHITE_PAL]  = F("Red Green White Colors");
+      _pal_name[SHADES_OF_RED_PAL]  = F("Shades of Red");
+      _pal_name[SHADES_OF_GREEN_PAL]= F("Shades of Green");
+      _pal_name[SHADES_OF_BLUE_PAL] = F("Shades of Blue");
 
       
 
@@ -350,7 +367,7 @@ class WS2812FX {
       _running = false;
       _num_segments = 1;
       _segments[0].mode = DEFAULT_MODE;
-      _segments[0].cPalette = RainbowColors_p;//DEFAULT_COLOR;
+      //_segments[0].cPalette = RainbowColors_p;//DEFAULT_COLOR;
       //_segments[0].colors[1] = CRGBPalette16(CRGB::Black);
       _segments[0].start = 0;
       _segments[0].stop = num_leds - 1;
@@ -358,11 +375,23 @@ class WS2812FX {
       _segments[0].deltaHue = DEFAULT_DELTAHUE;
       _segments[0].hueTime = DEFAULT_HUETIME;
       _segments[0].blendType = LINEARBLEND;
+      _segments[0].autoplay = false;
+      _segments[0].autoplayDuration = 55;
+      _segments[0].autoPal = false;
+      _segments[0].autoPalDuration = 30;
+      _segments[0].cooling = 50;
+      _segments[0].sparking = 125;
+      _segments[0].twinkleSpeed = 4;
+      _segments[0].twinkleDensity = 4;
+      _segments[0].milliamps = milliamps;
+      
+      _volts = volt;
+      FastLED.setMaxPowerInVoltsAndMilliamps(volt, milliamps);
+
       RESET_RUNTIME;
 
       SEGMENT_RUNTIME.timebase = millis();
       SEGMENT_RUNTIME.baseHue += DEFAULT_DELTAHUE;
-
     }
   
 
@@ -407,6 +436,58 @@ class WS2812FX {
       toggleBlendType(void),
       resetSegments();
 
+    inline void setMilliamps(uint16_t mA) 
+    {
+        _segments[0].milliamps = mA; 
+        FastLED.setMaxPowerInVoltsAndMilliamps(_volts, mA); 
+    }
+
+    inline void setCooling(uint8_t cool)
+    {
+      _segments[0].cooling = constrain(cool, 20, 100);
+    }
+
+    inline uint8_t getCooling(void) { return _segments[0].cooling; }
+
+    inline void setSparking(uint8_t spark)
+    {
+      _segments[0].sparking = constrain(spark, 50, 200);
+    }
+
+    inline uint8_t getSparking(void) { return _segments[0].sparking; }
+
+    inline void setTwinkleSpeed(uint8_t speed)
+    {
+      _segments[0].twinkleSpeed = constrain(speed, 0, 8);
+    }
+
+    inline uint8_t getTwinkleSpeed(void) { return _segments[0].twinkleSpeed; }
+
+    inline void setTwinkleDensity(uint8_t density)
+    {
+      _segments[0].twinkleDensity = constrain(density, 0, 8);
+    }
+
+    inline void setAutoplayDuration(uint16_t duration)
+    {
+      SEGMENT_RUNTIME.nextAuto = 0;
+      SEGMENT.autoplayDuration = duration;
+    }
+
+    inline void setAutoPalDuration(uint16_t duration)
+    {
+      SEGMENT_RUNTIME.nextPalette = 0;
+      SEGMENT.autoPalDuration = duration;
+    }
+
+    inline void sethueTime(uint16_t hueTime)
+    {
+      SEGMENT_RUNTIME.nextHue = 0;
+      SEGMENT.hueTime = hueTime;
+    }
+
+    inline uint8_t getTwinkleDensity(void) { return _segments[0].twinkleDensity; }
+
     boolean
       isRunning(void);
 
@@ -417,9 +498,14 @@ class WS2812FX {
       getPalCount(void),
       getNumSegments(void);
 
+    inline uint8_t getCurrentPaletteNumber(void) { return _currentPaletteNum; }
+    inline uint8_t getTargetPaletteNumber(void) { return _targetPaletteNum; }
+
     uint16_t
       getBeat88(void),
       getLength(void);
+      
+    inline uint16_t getMilliamps(void) { return _segments[0].milliamps; }
 
     uint32_t
       getColor(uint8_t p_index);
@@ -546,7 +632,10 @@ class WS2812FX {
       &BlueWhite_p, 
       &RedWhite_p, 
       &Holly_p, 
-      &RedGreenWhite_p
+      &RedGreenWhite_p,
+      &Shades_Of_Red_p,
+      &Shades_Of_Green_p,
+      &Shades_Of_Blue_p
     };
 
   
@@ -561,6 +650,9 @@ class WS2812FX {
     uint8_t
       get_random_wheel_index(uint8_t),
       _new_mode,
+      _volts,
+      _currentPaletteNum,
+      _targetPaletteNum,
       _brightness;
 
     const __FlashStringHelper*

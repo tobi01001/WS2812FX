@@ -154,6 +154,42 @@ const TProgmemRGBPalette16 Total_Black_p FL_PROGMEM = {
   CRGB::Black, CRGB::Black, CRGB::Black, CRGB::Black
 };
 
+// Shades
+#define SHADE01 0xF0
+#define SHADE02 0x80
+#define SHADE03 0x40
+#define SHADE04 0x20
+#define SHADE05 0x10
+// Values
+#define REDVAL(A)   ((A << 16)& 0xff0000)
+#define GREENVAL(A) ((A <<  8)& 0x00ff00)
+#define BLUEVAL(A)  ((A <<  0)& 0x0000ff)
+
+// Shades of Red
+const TProgmemRGBPalette16 Shades_Of_Red_p FL_PROGMEM = {
+  REDVAL(SHADE01), REDVAL(SHADE02), REDVAL(SHADE03), REDVAL(SHADE04),
+  REDVAL(SHADE05), CRGB::Black,     CRGB::Black,     REDVAL(SHADE04),
+  REDVAL(SHADE03), REDVAL(SHADE02), REDVAL(SHADE01), CRGB::Black,
+  CRGB::Black,     REDVAL(SHADE02), REDVAL(SHADE03), CRGB::Black
+};
+
+// Shades of Green
+const TProgmemRGBPalette16 Shades_Of_Green_p FL_PROGMEM = {
+  GREENVAL(SHADE01), GREENVAL(SHADE02), GREENVAL(SHADE03), GREENVAL(SHADE04),
+  GREENVAL(SHADE05), CRGB::Black,       CRGB::Black,       GREENVAL(SHADE04),
+  GREENVAL(SHADE03), GREENVAL(SHADE02), GREENVAL(SHADE01), CRGB::Black,
+  CRGB::Black,       GREENVAL(SHADE02), GREENVAL(SHADE03), CRGB::Black
+};
+
+// Shades of Blue
+const TProgmemRGBPalette16 Shades_Of_Blue_p FL_PROGMEM = {
+  BLUEVAL(SHADE01), BLUEVAL(SHADE02), BLUEVAL(SHADE03), BLUEVAL(SHADE04),
+  BLUEVAL(SHADE05), CRGB::Black,      CRGB::Black,      BLUEVAL(SHADE04),
+  BLUEVAL(SHADE03), BLUEVAL(SHADE02), BLUEVAL(SHADE01), CRGB::Black,
+  CRGB::Black,      BLUEVAL(SHADE02), BLUEVAL(SHADE03), CRGB::Black
+};
+
+
 
 /*
  * <Begin> Service routines
@@ -207,8 +243,8 @@ void WS2812FX::service() {
           {
             _segments[0].mode = constrain(_new_mode, 0, MODE_COUNT - 1);
             _new_mode = 255;
-            _transition = false;
             setTargetPalette(_transitionPalette, _transitionPaletteName);
+            _transition = false;
           }
         }
         else
@@ -224,9 +260,15 @@ void WS2812FX::service() {
 
     // Every huetime we increase the baseHue by the respective deltaHue.
     // set deltahue to 0, to turn this off.
-    EVERY_N_MILLISECONDS(SEGMENT.hueTime)
+    //EVERY_N_MILLISECONDS(SEGMENT.hueTime)
+    if(now > SEGMENT_RUNTIME.nextHue)
     {
-      SEGMENT_RUNTIME.baseHue += SEGMENT.deltaHue;
+      if(SEGMENT.reverse)
+        SEGMENT_RUNTIME.baseHue -= SEGMENT.deltaHue;
+      else
+        SEGMENT_RUNTIME.baseHue += SEGMENT.deltaHue;
+        
+      SEGMENT_RUNTIME.nextHue = now + SEGMENT.hueTime*10;
     }
 
     // Palette fading / blending
@@ -237,6 +279,41 @@ void WS2812FX::service() {
         _currentPaletteName = _targetPaletteName;
       }
     }
+
+    // Autoplay
+    //EVERY_N_SECONDS(_segments[0].autoplayDuration)
+    if(now > SEGMENT_RUNTIME.nextAuto)
+    {
+      if(_segments[0].autoplay && !_transition)
+      {
+        if(_segments[0].mode == (getModeCount()-1))
+        {
+          setMode(0);
+        }
+        else
+        {
+          setMode(_segments[0].mode+1);
+        }
+        SEGMENT_RUNTIME.nextAuto = now + SEGMENT.autoplayDuration*1000;
+      }
+    }
+
+    if(now > SEGMENT_RUNTIME.nextPalette)
+    {
+      if(SEGMENT.autoPal && !_transition)
+      {
+        if(getTargetPaletteNumber() >= getPalCount()-1)
+        {
+          setTargetPalette(0);
+        }
+        else
+        {
+          setTargetPalette(getTargetPaletteNumber()+1);
+        }
+        SEGMENT_RUNTIME.nextPalette = now + SEGMENT.autoPalDuration*1000;
+      }       
+    }
+
     // reset trigger...
     _triggered = false;
   }
@@ -454,13 +531,13 @@ CRGB WS2812FX::computeOneTwinkle( uint32_t ms, uint8_t salt) {
   //  of one cycle of the brightness wave function.
   //  The 'high digits' are also used to determine whether this pixel
   //  should light at all during this cycle, based on the TWINKLE_DENSITY.
-  uint8_t TWINKLE_SPEED = map8(SEGMENT.beat88>>8, 2, 8);
-  // Overall twinkle density.
-  // 0 (NONE lit) to 8 (ALL lit at once).  
-  // Default is 5.
-  #define TWINKLE_DENSITY 6
+  //  uint8_t TWINKLE_SPEED = _twinkleSpeed; //map8(SEGMENT.beat88>>8, 2, 8);
+  //  Overall twinkle density.
+  //  0 (NONE lit) to 8 (ALL lit at once).  
+  //  Default is 5.
+  //  #define TWINKLE_DENSITY _twinkleDensity //6
 
-  uint16_t ticks = ms >> (8-TWINKLE_SPEED);
+  uint16_t ticks = ms >> (8-_segments[0].twinkleSpeed);
   uint8_t fastcycle8 = ticks;
   uint16_t slowcycle16 = (ticks >> 8) + salt;
   slowcycle16 += sin8( slowcycle16);
@@ -468,7 +545,7 @@ CRGB WS2812FX::computeOneTwinkle( uint32_t ms, uint8_t salt) {
   uint8_t slowcycle8 = (slowcycle16 & 0xFF) + (slowcycle16 >> 8);
   
   uint8_t bright = 0;
-  if( ((slowcycle8 & 0x0E)/2) < TWINKLE_DENSITY) {
+  if( ((slowcycle8 & 0x0E)/2) < _segments[0].twinkleDensity) {
     bright = attackDecayWave8( fastcycle8);
   }
 
@@ -608,6 +685,7 @@ void WS2812FX::toggleBlendType(void){
 void WS2812FX::setCurrentPalette(CRGBPalette16 p, String Name = "Custom") { 
   _currentPalette = p;
   _currentPaletteName = Name;
+  _currentPaletteNum = NUM_PALETTES;
 }
 
 /* 
@@ -618,6 +696,7 @@ void WS2812FX::setCurrentPalette(CRGBPalette16 p, String Name = "Custom") {
 void WS2812FX::setCurrentPalette(uint8_t n=0) { 
   _currentPalette = *(_palettes[n % NUM_PALETTES]);
   _currentPaletteName = _pal_name[n % NUM_PALETTES];
+  _currentPaletteNum = n % NUM_PALETTES;
 }
 
 /*
@@ -626,8 +705,18 @@ void WS2812FX::setCurrentPalette(uint8_t n=0) {
  * Name: The name
  */
 void WS2812FX::setTargetPalette(CRGBPalette16 p, String Name = "Custom") { 
+  for(uint8_t i = 0; i< NUM_PALETTES; i++)
+  {
+    String tName = getPalName(i);
+    if(tName == Name)
+    {
+      setTargetPalette(i);
+      return;
+    }
+  }
   _targetPalette = p;
   _targetPaletteName = Name;
+  _targetPaletteNum = NUM_PALETTES;
 }
 
 /*
@@ -637,6 +726,7 @@ void WS2812FX::setTargetPalette(CRGBPalette16 p, String Name = "Custom") {
 void WS2812FX::setTargetPalette(uint8_t n=0) {
   _targetPalette = *(_palettes[n % NUM_PALETTES]);
   _targetPaletteName = _pal_name[n % NUM_PALETTES];
+  _targetPaletteNum = n % NUM_PALETTES;
 }
 
 /*
@@ -645,10 +735,14 @@ void WS2812FX::setTargetPalette(uint8_t n=0) {
  */ 
 void WS2812FX::setMode(uint8_t m) {
   #pragma message "Implement mode transition (fade or twinkle fade?) / Partly done with Palette"
+  if(m == SEGMENT.mode) return;  // not really a new mode...
   _new_mode = constrain(m, 0, MODE_COUNT - 1);
+  if(!_transition)
+  {
+    _transitionPalette = getTargetPalette();
+    _transitionPaletteName = getTargetPaletteName();
+  }
   _transition = true;
-  _transitionPalette = getTargetPalette();
-  _transitionPaletteName = getTargetPaletteName();
   //_segments[0].mode = FX_MODE_OFF;
   setBrightness(_brightness);
 }
@@ -674,8 +768,8 @@ void WS2812FX::setColor(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 void WS2812FX::setColor(CRGBPalette16 c) {
-  _segments[0].cPalette = c;
-  
+  //_segments[0].cPalette = c;
+  setTargetPalette(c);  
 }
 
 void WS2812FX::setColor(uint32_t c) {
@@ -718,7 +812,13 @@ boolean WS2812FX::isRunning() {
 }
 
 uint8_t WS2812FX::getMode(void) {
-  return SEGMENT.mode;
+  if(_new_mode != 255) {
+    return _new_mode;
+  }
+  else
+  {
+    return SEGMENT.mode;
+  }
 }
 
 uint16_t WS2812FX::getBeat88(void) {
@@ -750,7 +850,7 @@ void WS2812FX::setNumSegments(uint8_t n) {
 }
 
 uint32_t WS2812FX::getColor(uint8_t p_index = 0) {
-  return ColorFromPalette(_segments[0].cPalette, p_index);
+  return ColorFromPalette(_currentPalette, p_index);
 }
 
 WS2812FX::segment* WS2812FX::getSegments(void) {
@@ -782,7 +882,7 @@ void WS2812FX::setSegment(uint8_t n, uint16_t start, uint16_t stop, uint8_t mode
     _segments[n].mode = mode;
     _segments[n].beat88 = beat88;
     _segments[n].reverse = reverse;
-    _segments[n].cPalette = CRGBPalette16(color);
+    //_segments[n].cPalette = CRGBPalette16(color);
   }
 }
 
@@ -794,7 +894,7 @@ void WS2812FX::setSegment(uint8_t n, uint16_t start, uint16_t stop, uint8_t mode
     _segments[n].mode = mode;
     _segments[n].beat88 = beat88;
     _segments[n].reverse = reverse;
-    _segments[n].cPalette = pal;
+    //_segments[n].cPalette = pal;
   }
 }
 
@@ -806,10 +906,11 @@ void WS2812FX::setSegment(uint8_t n, uint16_t start, uint16_t stop, uint8_t mode
     _segments[n].mode = mode;
     _segments[n].beat88 = beat88;
     _segments[n].reverse = reverse;
-
+    /*
     for(uint8_t i=0; i<NUM_COLORS; i++) {
       _segments[n].cPalette = CRGBPalette16(colors[i]);
     }
+    */
   }
 }
 
@@ -1579,14 +1680,14 @@ uint16_t WS2812FX::mode_bubble_sort(void) {
  * Fire with Palette
  */
 uint16_t WS2812FX::mode_fire2012WithPalette(void) {
-  uint8_t cooling = map(SEGMENT.beat88, BEAT88_MIN, BEAT88_MAX, 20, 100);
-  uint8_t sparking = map(SEGMENT.beat88, BEAT88_MIN, BEAT88_MAX, 50, 200);
+  //uint8_t cooling = map(SEGMENT.beat88, BEAT88_MIN, BEAT88_MAX, 20, 100);
+  //uint8_t sparking = map(SEGMENT.beat88, BEAT88_MIN, BEAT88_MAX, 50, 200);
   // Array of temperature readings at each simulation cell
   static byte *heat = new byte[SEGMENT_LENGTH];
 
   // Step 1.  Cool down every cell a little
     for( int i = 0; i < SEGMENT_LENGTH; i++) {
-      heat[i] = qsub8( heat[i],  random8(0, ((cooling * 10) / SEGMENT_LENGTH) + 2));
+      heat[i] = qsub8( heat[i],  random8(0, ((_segments[0].cooling * 10) / SEGMENT_LENGTH) + 2));
     }
   
     // Step 2.  Heat from each cell drifts 'up' and diffuses a little
@@ -1595,7 +1696,7 @@ uint16_t WS2812FX::mode_fire2012WithPalette(void) {
     }
     
     // Step 3.  Randomly ignite new 'sparks' of heat near the bottom
-    if( random8() < sparking ) {
+    if( random8() < _segments[0].sparking ) {
       int y = random8(7);
       heat[y] = qadd8( heat[y], random8(160,255) );
     }
@@ -1720,7 +1821,7 @@ uint16_t WS2812FX::mode_softtwinkles(void) {
 
 uint16_t WS2812FX::mode_custom() {
   if(customMode == NULL) {
-    return 1000; // if custom mode not set, do nothing
+    return mode_static(); // if custom mode not set, we just do "static"
   } else {
     return customMode();
   }
