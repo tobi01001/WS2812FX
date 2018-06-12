@@ -78,7 +78,7 @@ FASTLED_USING_NAMESPACE
 
 /* each segment uses 34 bytes of SRAM memory, so if you're application fails because of
   insufficient memory, decreasing MAX_NUM_SEGMENTS may help */
-#define MAX_NUM_SEGMENTS 10
+#define MAX_NUM_SEGMENTS 1 //10
 #define NUM_COLORS 1     /* number of colors per segment */
 #define SEGMENT          _segments[_segment_index]
 #define SEGMENT_RUNTIME  _segment_runtimes[_segment_index]
@@ -219,7 +219,8 @@ class WS2812FX {
       uint8_t         twinkleSpeed;
       uint8_t         twinkleDensity;
       uint8_t         mode;
-      uint8_t          deltaHue;
+      uint8_t         deltaHue;
+      uint8_t         blur;
       TBlendType      blendType;
       //CRGBPalette16   cPalette;
       //uint16_t        CRC;
@@ -244,12 +245,15 @@ class WS2812FX {
               const uint8_t volt = 5, 
               const uint16_t milliamps = 500, 
               const CRGBPalette16 pal = Rainbow_gp, 
-              const String Name = "Custom",
+              const String Name = "Rainbow Colors",
               const LEDColorCorrection colc = TypicalLEDStrip  ) {
 
+      _bleds = new CRGB[num_leds];
       leds = new CRGB[num_leds]; //CRGB[NUM_LEDS];
 
-      FastLED.addLeds<WS2812,LED_PIN, GRB>(leds, num_leds);//NUM_LEDS);
+      setBlurValue(128);
+
+      FastLED.addLeds<WS2812,LED_PIN, GRB>(_bleds, num_leds);//NUM_LEDS);
       FastLED.setCorrection(colc); //TypicalLEDStrip);
       _currentPalette = CRGBPalette16(CRGB::Black);
       
@@ -387,6 +391,7 @@ class WS2812FX {
       
       _volts = volt;
       FastLED.setMaxPowerInVoltsAndMilliamps(volt, milliamps);
+      
 
       RESET_RUNTIME;
 
@@ -398,9 +403,11 @@ class WS2812FX {
     ~WS2812FX()
     {
       delete leds;
+      delete _bleds;
     }
 
     CRGB *leds;
+    CRGB *_bleds;
 
     void
       init(void),
@@ -467,6 +474,13 @@ class WS2812FX {
     {
       _segments[0].twinkleDensity = constrain(density, 0, 8);
     }
+    
+    inline uint8_t getBlurValue(void) { return _segments[0].blur; }
+
+    inline void setBlurValue(uint8_t blur)
+    {
+      _segments[0].blur = blur;
+    }
 
     inline void setAutoplayDuration(uint16_t duration)
     {
@@ -500,12 +514,14 @@ class WS2812FX {
 
     inline uint8_t getCurrentPaletteNumber(void) { return _currentPaletteNum; }
     inline uint8_t getTargetPaletteNumber(void) { return _targetPaletteNum; }
+    inline uint8_t getVoltage(void) { return _volts; }
 
     uint16_t
       getBeat88(void),
       getLength(void);
       
     inline uint16_t getMilliamps(void) { return _segments[0].milliamps; }
+    inline uint32_t getCurrentPower(void) { return calculate_unscaled_power_mW(leds, SEGMENT_LENGTH); }
 
     uint32_t
       getColor(uint8_t p_index);
@@ -653,6 +669,7 @@ class WS2812FX {
       _volts,
       _currentPaletteNum,
       _targetPaletteNum,
+      _blend,
       _brightness;
 
     const __FlashStringHelper*
@@ -664,10 +681,13 @@ class WS2812FX {
     uint8_t _segment_index = 0;
     uint8_t _num_segments = 1;
     uint8_t _fps;
-    segment _segments[MAX_NUM_SEGMENTS] = { // SRAM footprint: 20 bytes per element
+    segment _segments[MAX_NUM_SEGMENTS]; 
+    /*
+    = { // SRAM footprint: 20 bytes per element
       // mode, color[], speed, start, stop, reverse
       { FX_MODE_STATIC, {CRGBPalette16(RainbowColors_p)}, DEFAULT_BEAT88, 0, 7, false}
     };
+    */
     segment_runtime _segment_runtimes[MAX_NUM_SEGMENTS]; // SRAM footprint: 14 bytes per element
 };
 

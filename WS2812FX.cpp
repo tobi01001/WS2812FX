@@ -224,16 +224,32 @@ void WS2812FX::service() {
       // check if we fade to a new FX mode.
       if(_transition)
       {
+        /*
         // we fade to black....
-        setTargetPalette(CRGBPalette16(CRGB::Black), "Black");;
-        bool isBlack = true;
+         setTargetPalette(CRGBPalette16(CRGB::Black), "Black");;
+         bool isBlack = true;
         for(uint16_t i = SEGMENT.start; i<SEGMENT.stop; i++)
         { 
+            
             if(leds[i]) 
             {
               isBlack = false;
             }
+            
+           
         }
+        */
+        EVERY_N_MILLISECONDS(32)
+        {
+          nblend(_bleds, leds, SEGMENT_LENGTH, _blend);
+          _blend = qadd8(_blend,2);
+        }
+        if(_blend == 255)
+        {
+          _transition = false;
+          _blend = 0;
+        }
+        /*
         // once every LED is full black, 
         // we can activate the new effect on the previous palette.
         if(isBlack)
@@ -251,7 +267,18 @@ void WS2812FX::service() {
         {
           // sanity "else"
         }
+        */
+
       }
+      else
+      {
+        EVERY_N_MILLISECONDS(10)
+        {
+          fadeToBlackBy(_bleds, SEGMENT_LENGTH, 4);
+        }
+        nblend(_bleds, leds, SEGMENT_LENGTH, SEGMENT.blur);
+      }
+
     }
 
     // Write the data
@@ -333,6 +360,7 @@ void WS2812FX::trigger() {
 }
 
 void WS2812FX::show() {
+  nblend(_bleds, leds, SEGMENT_LENGTH, SEGMENT.blur);
   FastLED.show();
 }
 
@@ -488,7 +516,7 @@ uint8_t WS2812FX::get_random_wheel_index(uint8_t pos) {
  */
 void WS2812FX::strip_off() {
   _running = false;
-  FastLED.clear(true);
+  FastLED.clear();
 }
 
 /*
@@ -736,15 +764,24 @@ void WS2812FX::setTargetPalette(uint8_t n=0) {
 void WS2812FX::setMode(uint8_t m) {
   #pragma message "Implement mode transition (fade or twinkle fade?) / Partly done with Palette"
   if(m == SEGMENT.mode) return;  // not really a new mode...
-  _new_mode = constrain(m, 0, MODE_COUNT - 1);
+  // _new_mode = constrain(m, 0, MODE_COUNT - 1);
+  SEGMENT.mode = constrain(m, 0, MODE_COUNT - 1);
+  if(!_transition)
+  {
+    _blend = 0;
+    fill_solid(leds, SEGMENT_LENGTH, CRGB::Black);
+  }
+  /*
   if(!_transition)
   {
     _transitionPalette = getTargetPalette();
     _transitionPaletteName = getTargetPaletteName();
   }
+  */
   _transition = true;
-  //_segments[0].mode = FX_MODE_OFF;
-  setBrightness(_brightness);
+  //_blend = 0;
+  
+  //setBrightness(_brightness);
 }
 
 void WS2812FX::setSpeed(uint16_t s) {
