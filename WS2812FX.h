@@ -55,7 +55,7 @@ FASTLED_USING_NAMESPACE
 
 /* </FastLED implementation> */
 
-#define DEFAULT_BRIGHTNESS 200
+#define DEFAULT_BRIGHTNESS 240
 #define DEFAULT_MODE 1
 #define DEFAULT_BEAT88 1000
 #define DEFAULT_COLOR 0xFF0000
@@ -112,7 +112,8 @@ enum MODES {
   FX_MODE_PLASMA,
   FX_MODE_JUGGLE_PAL,
   FX_MODE_CONFETTI,
-  FX_MODE_FILL_BEAT ,
+  // needs rework, currently not used
+  // FX_MODE_FILL_BEAT ,
   FX_MODE_FILL_WAVE ,
   FX_MODE_DOT_BEAT,
   FX_MODE_TO_INNER,
@@ -294,7 +295,8 @@ class WS2812FX {
       _mode[FX_MODE_PLASMA]                  = &WS2812FX::mode_plasma;
       _mode[FX_MODE_JUGGLE_PAL]              = &WS2812FX::mode_juggle_pal;
       _mode[FX_MODE_CONFETTI]                = &WS2812FX::mode_confetti;
-      _mode[FX_MODE_FILL_BEAT]               = &WS2812FX::mode_fill_beat;
+      // needs rework, currently not used
+      // _mode[FX_MODE_FILL_BEAT]               = &WS2812FX::mode_fill_beat;
       _mode[FX_MODE_DOT_BEAT]                = &WS2812FX::mode_dot_beat;
       _mode[FX_MODE_TO_INNER]                = &WS2812FX::mode_to_inner;
       _mode[FX_MODE_FILL_BRIGHT]             = &WS2812FX::mode_fill_bright;
@@ -313,7 +315,8 @@ class WS2812FX {
       _name[FX_MODE_PLASMA ]                    = F("Plasma Effect");
       _name[FX_MODE_JUGGLE_PAL]                 = F("Juggle Moving Pixels");
       _name[FX_MODE_CONFETTI]                   = F("Random Confetti");
-      _name[FX_MODE_FILL_BEAT]                  = F("Color Fill Beat");
+      // Needs rework, currently not used
+      //_name[FX_MODE_FILL_BEAT]                  = F("Color Fill Beat");
       _name[FX_MODE_DOT_BEAT]                   = F("Moving Dots");
       _name[FX_MODE_MULTI_DYNAMIC]              = F("Multi Dynamic");
       _name[FX_MODE_RAINBOW]                    = F("Rainbow");
@@ -552,7 +555,7 @@ class WS2812FX {
     uint8_t attackDecayWave8( uint8_t i);
 
     uint16_t
-      mode_off(void),
+      //mode_off(void),
       mode_ease(void),
       mode_twinkle_ease(void),
       mode_ease_func(bool sparks),

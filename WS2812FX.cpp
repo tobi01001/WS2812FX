@@ -217,58 +217,23 @@ void WS2812FX::service() {
       // There are barely any tasks controlled by return value.
       // So they usually return the STRIP_MIN_DELAY
       if(now > SEGMENT_RUNTIME.next_time || _triggered) {
-        uint16_t delay = (this->*_mode[SEGMENT.mode])();
-        SEGMENT_RUNTIME.next_time = now + (int)delay;
+        //uint16_t delay = 
+        (this->*_mode[SEGMENT.mode])();
+        SEGMENT_RUNTIME.next_time = now + STRIP_MIN_DELAY; //(int)delay;
       }
-
       // check if we fade to a new FX mode.
       if(_transition)
       {
-        /*
-        // we fade to black....
-         setTargetPalette(CRGBPalette16(CRGB::Black), "Black");;
-         bool isBlack = true;
-        for(uint16_t i = SEGMENT.start; i<SEGMENT.stop; i++)
-        { 
-            
-            if(leds[i]) 
-            {
-              isBlack = false;
-            }
-            
-           
-        }
-        */
-        EVERY_N_MILLISECONDS(32)
+        EVERY_N_MILLISECONDS(8)
         {
           nblend(_bleds, leds, SEGMENT_LENGTH, _blend);
-          _blend = qadd8(_blend,2);
+          _blend = qadd8(_blend,1);
         }
         if(_blend == 255)
         {
           _transition = false;
           _blend = 0;
         }
-        /*
-        // once every LED is full black, 
-        // we can activate the new effect on the previous palette.
-        if(isBlack)
-        {
-
-          if(_currentPalette == _targetPalette)
-          {
-            _segments[0].mode = constrain(_new_mode, 0, MODE_COUNT - 1);
-            _new_mode = 255;
-            setTargetPalette(_transitionPalette, _transitionPaletteName);
-            _transition = false;
-          }
-        }
-        else
-        {
-          // sanity "else"
-        }
-        */
-
       }
       else
       {
@@ -278,9 +243,7 @@ void WS2812FX::service() {
         }
         nblend(_bleds, leds, SEGMENT_LENGTH, SEGMENT.blur);
       }
-
     }
-
     // Write the data
     FastLED.show();
 
@@ -762,24 +725,20 @@ void WS2812FX::setTargetPalette(uint8_t n=0) {
  * m: mode number
  */ 
 void WS2812FX::setMode(uint8_t m) {
-  #pragma message "Implement mode transition (fade or twinkle fade?) / Partly done with Palette"
   if(m == SEGMENT.mode) return;  // not really a new mode...
-  // _new_mode = constrain(m, 0, MODE_COUNT - 1);
+  
+  // make sure its a valid mode
   SEGMENT.mode = constrain(m, 0, MODE_COUNT - 1);
   if(!_transition)
   {
-    _blend = 0;
+    // if we are not currently in a transition phase
+    // we clear the led array (the one holding the effect
+    // the real LEDs are drawn from _bleds and blended to the leds)
     fill_solid(leds, SEGMENT_LENGTH, CRGB::Black);
   }
-  /*
-  if(!_transition)
-  {
-    _transitionPalette = getTargetPalette();
-    _transitionPaletteName = getTargetPaletteName();
-  }
-  */
+  // start the transition phase
   _transition = true;
-  //_blend = 0;
+  _blend = 0;
   
   //setBrightness(_brightness);
 }
@@ -983,15 +942,17 @@ void WS2812FX::setCustomMode(uint16_t (*p)()) {
 
 /*
  * The "Off" mode clears the Leds.
- */
+ *
 uint16_t WS2812FX::mode_off(void) {
   FastLED.clear(true);
   return 1000;
 }
-
+*/
 
 /*
- * No blinking. Just plain old static light.
+ * No blinking. Just plain old static light - but mapped on a color palette.
+ * Palette ca be "moved" by SEGMENT.baseHue
+ * will distribute the palette over the display length
  */
 uint16_t WS2812FX::mode_static(void) {
   
@@ -999,67 +960,134 @@ uint16_t WS2812FX::mode_static(void) {
   return STRIP_MIN_DELAY;
 }
 
+/*
+ * Two moving "comets" moving in and out with Antialiasing
+ */
 uint16_t WS2812FX::mode_ease(void) {
   return this->mode_ease_func(false);
 }
 
+/*
+ * Two moving "comets" moving in and out with Antialiasing
+ * Random Sparkles will be additionally applied.
+ */
 uint16_t WS2812FX::mode_twinkle_ease(void) {
   return this->mode_ease_func(true);
 }
 
 /*
  * Two moving "comets" moving in and out with Antialiasing
- * Random Sparkles additionally applied.
+ * Random Sparkles can additionally applied.
  */
 uint16_t WS2812FX::mode_ease_func(bool sparks = true) {
-  const uint8_t width = 2;
+  // number of pixels for "antialised" (fractional) bar
+  const uint8_t width = 1;
+  // pixel position on the strip we make two out of it...
   uint16_t lerpVal    = 0;
+  // need to know if we are in the middle (to smoothly update random beat)
   static bool trigger = false;
+  // beat being modified during runtime
   static uint16_t beat = SEGMENT.beat88;
+  // to check if beat88 recently changed
+  // ToDo (idea) maybe a global runtime flag could help 
+  // which is recent by the active effect making use of the "beat"
   static uint16_t oldbeat = SEGMENT.beat88;
+  // to check if we have movement.
+  // maybe easier but works good for now.
   static uint16_t p_lerp = lerpVal;
 
-  if(oldbeat != SEGMENT.beat88)
-  {
-    beat = SEGMENT.beat88;
-    oldbeat = SEGMENT.beat88;
-    //SEGMENT_RUNTIME.timebase = millis();
-  }
+  // instead of moving the color around (palette wise)
+  // we set it to the baseHue. So it can still be changed 
+  // and also change over time
+  uint8_t colorMove = SEGMENT_RUNTIME.baseHue;  //= quadwave8(map(beat88(max(SEGMENT.beat88/2,1),SEGMENT_RUNTIME.timebase), 0, 65535, 0, 255)) + SEGMENT_RUNTIME.baseHue;
 
-  uint8_t colorMove = quadwave8(map(beat88(max(SEGMENT.beat88/2,1),SEGMENT_RUNTIME.timebase), 0, 65535, 0, 255)) + SEGMENT_RUNTIME.baseHue;
+  // this is the fading tail....
+  // we adjust it a bit on the speed (beat)
+  fade_out(SEGMENT.beat88 >> 5);
 
-  fade_out(48);
-
-  
-    //orig is beatsin16
+  // now e calculate a sine curve for the led position
+  // factor 16 is used for the fractional bar
   lerpVal = beatsin88(beat, SEGMENT.start*16, SEGMENT.stop*16-(width*16), SEGMENT_RUNTIME.timebase);
   
+  // once we are in the middle
+  // we can modify the speed a bit
   if(lerpVal == ((SEGMENT_LENGTH*16)/2))
   {
+    // the trigger is used because we are more frames in the middle 
+    // but only one should trigger
     if(trigger)
     {
-      trigger = false;
-      SEGMENT_RUNTIME.timebase = millis();
-      if(beat < 128)
+      // if the changed the base speed (external source)
+      // we refesh the values
+      if(oldbeat != SEGMENT.beat88)
       {
-        beat += random8(128);
+        beat = SEGMENT.beat88;
+        oldbeat = SEGMENT.beat88;
+        //SEGMENT_RUNTIME.timebase = millis();
+      }
+      // reset the trigger
+      trigger = false;
+      // tiimebase starts fresh in the middle (avoid jumping pixels)
+      SEGMENT_RUNTIME.timebase = millis();
+      // we randomly increase or decrease
+      // as we work with unsigned values we do this with an offset...
+      // smallest value should be 255
+      if(beat < 255)
+      {
+        // avoid roll over to 65535
+        beat += 2 * random8();
       }
       else
       {
-        beat += (128 - random8(128,255));
+        // randomly increase or decrease beat
+        beat += 2 * (128 - random8());
       }
       
     }
   }
   else
   {
+    // activate trigger if we are moving
     if(lerpVal != p_lerp) trigger = true;
   }
 
   p_lerp = lerpVal;
+  // we draw two fractional bars here. for the color mapping we need the overflow and therefore cast to uint8_t
+  drawFractionalBar(lerpVal, width, _currentPalette, (uint8_t)((uint8_t)(lerpVal/16-SEGMENT.start) + colorMove), _brightness);
+  drawFractionalBar((SEGMENT.stop*16)-lerpVal, width, _currentPalette, (uint8_t)((uint8_t)(lerpVal/16-SEGMENT.start) + colorMove), _brightness);
 
-  drawFractionalBar(lerpVal, 1, _currentPalette, (lerpVal/16-SEGMENT.start) + colorMove, _brightness);
-  drawFractionalBar((SEGMENT.stop*16)-lerpVal, 1, _currentPalette, (lerpVal/16-SEGMENT.start) + colorMove, _brightness);
+  if(sparks) addSparks(10, true, false);
+
+  return STRIP_MIN_DELAY;
+}
+
+// moves a fractional bar along the stip based on noise
+uint16_t WS2812FX::mode_inoise8_mover(void) {
+  return this->mode_inoise8_mover_func(false);
+}
+
+// moves a fractional bar along the stip based on noise
+// random twinkles are added
+uint16_t WS2812FX::mode_inoise8_mover_twinkle(void) {
+  return this->mode_inoise8_mover_func(true);
+}
+
+uint16_t WS2812FX::mode_inoise8_mover_func(bool sparks) {
+  uint16_t xscale = SEGMENT_LENGTH; //30;                                         
+  uint16_t yscale = 30;
+  const uint16_t width = 6; //max(SEGMENT.beat88/256,1);
+  static uint16_t dist = 1234;
+  
+  uint8_t locn = inoise8(xscale, dist+yscale);       
+  uint16_t pixlen = map(locn,0,255,SEGMENT.start*16, SEGMENT.stop*16-width*16);
+  
+  uint8_t colormove = SEGMENT_RUNTIME.baseHue; // quadwave8(map(beat88(SEGMENT.beat88, SEGMENT_RUNTIME.timebase), 0, 65535, 0, 255)) + SEGMENT_RUNTIME.baseHue;
+
+  fade_out(48);
+  
+  drawFractionalBar(pixlen, width, _currentPalette, (uint8_t)((uint8_t)(pixlen / 64) + colormove)); //, beatsin88(max(SEGMENT.beat88/2,1),200 % _brightness, _brightness, SEGMENT_RUNTIME.timebase));
+  
+  dist += beatsin88(SEGMENT.beat88,1,6, SEGMENT_RUNTIME.timebase);  
 
   if(sparks) addSparks(10, true, false);
 
@@ -1076,9 +1104,99 @@ uint16_t WS2812FX::mode_plasma(void) {
   for (int k=SEGMENT.start; k<SEGMENT.stop; k++) {                              // For each of the LED's in the strand, set a brightness based on a wave as follows:
 
     uint8_t colorIndex = cubicwave8((k*15)+thisPhase)/2 + cos8((k*8)+thatPhase)/2 + SEGMENT_RUNTIME.baseHue;           // Create a wave and add a phase change and add another wave with its own phase change.. Hey, you can even change the frequencies if you wish.
-    uint8_t thisBright = qsuba(colorIndex, beatsin88((SEGMENT.beat88*12)/10,0,128))+2;             // qsub gives it a bit of 'black' dead space by setting sets a minimum value. If colorIndex < current value of beatsin8(), then bright = 0. Otherwise, bright = colorIndex..
+    uint8_t thisBright = qsuba(colorIndex, beatsin88((SEGMENT.beat88*12)/10,0,128));             // qsub gives it a bit of 'black' dead space by setting sets a minimum value. If colorIndex < current value of beatsin8(), then bright = 0. Otherwise, bright = colorIndex..
+    CRGB newColor = ColorFromPalette(_currentPalette, colorIndex, thisBright, SEGMENT.blendType);  // Let's now add the foreground colour.
+    leds[k] = nblend(leds[k], newColor, 64);
+  }
+  return STRIP_MIN_DELAY;
+}
 
-    leds[k] = ColorFromPalette(_currentPalette, colorIndex, thisBright, SEGMENT.blendType);  // Let's now add the foreground colour.
+/*
+ * Move 3 dots / small bars (antialised) at different speeds
+ */
+uint16_t WS2812FX::mode_juggle_pal(void) {
+  const uint8_t numdots = 3;
+  const uint8_t width = max(SEGMENT_LENGTH/15,2);
+  uint8_t curhue = 0;
+  static uint8_t thishue = 0;
+  curhue = thishue;                                           // Reset the hue values.
+  EVERY_N_MILLISECONDS(100)
+  {
+    thishue = random8(curhue, qadd8(curhue,8));
+  }
+
+  fade_out(96);
+  
+  for( int i = 0; i < numdots; i++) {
+    uint16_t pos = beatsin88(max(SEGMENT.beat88/2,1)+i*256+762,SEGMENT.start*16, SEGMENT.stop*16-width*16, SEGMENT_RUNTIME.timebase);
+    drawFractionalBar(pos, width, _currentPalette, curhue, _brightness);
+    uint8_t delta = random8(9);
+    if(delta < 5)
+    {
+      curhue = curhue - (uint8_t)(delta)  + SEGMENT_RUNTIME.baseHue;
+    }
+    else
+    {
+      curhue = curhue + (uint8_t)(delta/2) + SEGMENT_RUNTIME.baseHue;
+    }
+    
+  }
+  return STRIP_MIN_DELAY;
+}
+
+/*
+ * Confetti, yeah
+ */
+uint16_t WS2812FX::mode_confetti(void) {
+
+  fade_out(8);
+  
+  if(random8(3) != 0) return 20;
+
+  uint16_t pos;
+  uint8_t index = (uint8_t)beatsin88(SEGMENT.beat88, 0, 255, SEGMENT_RUNTIME.timebase) + SEGMENT_RUNTIME.baseHue;
+  uint8_t bright = random8(192 % _brightness, _brightness);
+  const uint8_t space = 1;
+  bool newSpark = true;
+  
+  pos = random16((SEGMENT.start + 1)*16, (SEGMENT.stop - 2)*16-32);   
+  for(int_fast8_t i = 0 - space; i<=space; i++)
+  {
+    if((pos/16+i) >=SEGMENT.start && (pos/16+i) < SEGMENT.stop)
+    {
+      if(leds[(pos/16+i)]) newSpark = false;
+    }
+  }
+
+  if(!newSpark) return STRIP_MIN_DELAY;
+
+  drawFractionalBar(pos, 1, _currentPalette, index, bright);
+  
+  return STRIP_MIN_DELAY;
+}
+
+
+#pragma message "Needs Rework, especially beat89 and effect width - currently not used..."
+/*
+ * Fills the strip with waving color and brightness
+ */
+uint16_t WS2812FX::mode_fill_beat(void) {
+  
+  uint8_t dist1, dist2;
+  dist1 = (uint8_t)((triwave8(map(SEGMENT.beat88*6, 0, 65535, 0, 255)) + (uint8_t)beatsin88(SEGMENT.beat88, 0, 5, SEGMENT_RUNTIME.timebase)));
+  dist2 = (uint8_t)((uint8_t)map(  beat88( max((SEGMENT.beat88*3)*2,1), 
+                        SEGMENT_RUNTIME.timebase),
+                0 , 65535, 0, 255) 
+          + 
+          (uint8_t)beatsin88(  max(SEGMENT.beat88, (uint16_t)1), 0, 4, SEGMENT_RUNTIME.timebase));
+  //dist1 = map8(dist1,0,255);
+  //dist2 = map8(dist2,0,255);
+  CRGB newColor = CRGB::Black;
+  for(uint8_t k=SEGMENT.start; k<SEGMENT.stop; k++)
+  {
+    uint8_t br = quadwave8(k*2-dist1) % _brightness;
+    newColor = ColorFromPalette(_currentPalette, k+dist2 + SEGMENT_RUNTIME.baseHue, br, SEGMENT.blendType); 
+    leds[k] = nblend(leds[k], newColor, qadd8(SEGMENT.beat88>>8, 24));
   }
   return STRIP_MIN_DELAY;
 }
@@ -1089,50 +1207,17 @@ uint16_t WS2812FX::mode_plasma(void) {
 uint16_t WS2812FX::mode_fill_wave(void) {
   fill_palette( &leds[SEGMENT.start], 
                 (SEGMENT_LENGTH), 
-                SEGMENT_RUNTIME.baseHue + triwave8( (uint8_t)map( beat88( max(  SEGMENT.beat88/4, 2), 
-                                                SEGMENT_RUNTIME.timebase),
-                                        0,  65535,  0,  255)),
+                SEGMENT_RUNTIME.baseHue + (uint8_t)beatsin88(SEGMENT.beat88*2, 0, 255, SEGMENT_RUNTIME.timebase),
+                // SEGMENT_RUNTIME.baseHue + triwave8( (uint8_t)map( beat88( max(  SEGMENT.beat88/4, 2), SEGMENT_RUNTIME.timebase), 0,  65535,  0,  255)),
                           max(  255/SEGMENT_LENGTH+1, 1), 
                 _currentPalette, 
-                (uint8_t)beatsin88(  max(SEGMENT.beat88/8,1), 
-                            192, 255, 
+                (uint8_t)beatsin88(  max(SEGMENT.beat88*1 , 1), 
+                            48, 255, 
                             SEGMENT_RUNTIME.timebase),
                 SEGMENT.blendType);
   return STRIP_MIN_DELAY;
 }
 
-/*
- * Waving brightness over the complete strip.
- */
-uint16_t WS2812FX::mode_fill_bright(void) {
-  fill_palette(&leds[SEGMENT.start], (SEGMENT_LENGTH), beat88(max((SEGMENT.beat88/256),2), SEGMENT_RUNTIME.timebase), 
-      max(255/SEGMENT_LENGTH+1,1), _currentPalette, beatsin88(max(SEGMENT.beat88/512,1), 32, 255, SEGMENT_RUNTIME.timebase),SEGMENT.blendType);
-  return STRIP_MIN_DELAY;
-}
-
-/*
- * Pulsing to the inner middle from both ends..
- */
-uint16_t WS2812FX::mode_to_inner(void) {
-  #pragma message "Implement fractional grow"
-  
-  uint16_t led_up_to = (((SEGMENT_LENGTH)/2+1)+SEGMENT.start);
-
-  //fadeToBlackBy(&leds[SEGMENT.start], (SEGMENT_LENGTH), 64);
-  fade_out(64);
-  
-  //start = beatsin16(beat/3, SEGMENT.start, led_up_to/2);
-  fill_palette(&leds[SEGMENT.start], beatsin88(SEGMENT.beat88, 0, led_up_to, SEGMENT_RUNTIME.timebase), 
-                 SEGMENT_RUNTIME.baseHue, 5, _currentPalette, 255,SEGMENT.blendType);
-  for(uint8_t i = (SEGMENT_LENGTH)-1; i>=((SEGMENT_LENGTH) - led_up_to); i--)
-  {
-    if(((SEGMENT_LENGTH)-i) >= 0 && ((SEGMENT_LENGTH)-i) < (SEGMENT_LENGTH))
-    {
-      leds[i] = leds[(SEGMENT_LENGTH)-i];
-    }
-  }
-  return STRIP_MIN_DELAY;
-}
 
 /*
  * 3 "dots / small bars" moving with different 
@@ -1221,110 +1306,76 @@ uint16_t WS2812FX::mode_dot_beat(void) {
   return STRIP_MIN_DELAY;
 }
 
-/*
- * Fills the strip with waving color and brightness
- */
-uint16_t WS2812FX::mode_fill_beat(void) {
-  uint8_t dist1, dist2;
-  dist1 = (triwave8(map(SEGMENT.beat88, 0, 65535, 0, 255)) + beatsin88(SEGMENT.beat88, 0, 5, SEGMENT_RUNTIME.timebase));
-  dist2 = map(  beat88( max((SEGMENT.beat88/3)*2,1), 
-                        SEGMENT_RUNTIME.timebase),
-                0 , 65535, 0, 255) 
-          + 
-          beatsin88(  max(SEGMENT.beat88/6,1), 0, 4, SEGMENT_RUNTIME.timebase);
-  //dist1 = map8(dist1,0,255);
-  //dist2 = map8(dist2,0,255);
-  for(uint8_t k=SEGMENT.start; k<SEGMENT.stop; k++)
-  {
-    uint8_t br = quadwave8(k*2-dist1) % _brightness;
-    leds[k] = ColorFromPalette(_currentPalette, k+dist2 + SEGMENT_RUNTIME.baseHue, br, SEGMENT.blendType);
-  }
-  return STRIP_MIN_DELAY;
-}
 
 /*
- * Confetti, yeah
+ * Pulsing to the inner middle from both ends..
  */
-uint16_t WS2812FX::mode_confetti(void) {
-
-  fade_out(24);
+uint16_t WS2812FX::mode_to_inner(void) {
+  #pragma message "Implement fractional grow"
   
-  if(random8(3) != 0) return 20;
+  uint16_t led_up_to = (((SEGMENT_LENGTH)/2+1)+SEGMENT.start);
 
-  uint16_t pos;
-  uint8_t index = beatsin88(SEGMENT.beat88, 0, 255, SEGMENT_RUNTIME.timebase) + SEGMENT_RUNTIME.baseHue;
-  uint8_t bright = random8(128 % _brightness, _brightness);
-  const uint8_t space = 2;
-  bool newSpark = true;
+  //fadeToBlackBy(&leds[SEGMENT.start], (SEGMENT_LENGTH), 64);
+  fade_out(64);
   
-  pos = random16((SEGMENT.start + 1)*16, (SEGMENT.stop - 2)*16-32);   
-  for(int_fast8_t i = 0 - space; i<=space; i++)
+  //start = beatsin16(beat/3, SEGMENT.start, led_up_to/2);
+  fill_palette(&leds[SEGMENT.start], 
+               beatsin88(
+                         SEGMENT.beat88 < 13107 ? SEGMENT.beat88 * 5 : SEGMENT.beat88, 
+                         0, led_up_to, SEGMENT_RUNTIME.timebase), 
+               SEGMENT_RUNTIME.baseHue, 5, _currentPalette, 255, SEGMENT.blendType);
+  for(uint8_t i = (SEGMENT_LENGTH)-1; i>=((SEGMENT_LENGTH) - led_up_to); i--)
   {
-    if((pos/16+i) >=SEGMENT.start && (pos/16+i) < SEGMENT.stop)
+    if(((SEGMENT_LENGTH)-i) >= 0 && ((SEGMENT_LENGTH)-i) < (SEGMENT_LENGTH))
     {
-      if(leds[(pos/16+i)]) newSpark = false;
+      leds[i] = leds[(SEGMENT_LENGTH)-i];
     }
   }
-
-  if(!newSpark) return STRIP_MIN_DELAY;
-
-  drawFractionalBar(pos, 2, _currentPalette, index, bright);
-  
   return STRIP_MIN_DELAY;
 }
+
 
 /*
- * Move 3 dots / small bars (antialised) at different speeds
+ * Does the "standby-breathing" of well known i-Devices. Fixed Speed.
+ * Use mode "fade" if you like to have something similar with a different speed.
  */
-uint16_t WS2812FX::mode_juggle_pal(void) {
-  const uint8_t numdots = 3;
-  const uint8_t width = max(SEGMENT_LENGTH/15,2);
-  uint8_t curhue = 0;
-  static uint8_t thishue = 0;
-  curhue = thishue;                                           // Reset the hue values.
-  EVERY_N_MILLISECONDS(100)
+uint16_t WS2812FX::mode_breath(void) {
+  
+  fill_palette(&leds[SEGMENT.start], SEGMENT_LENGTH, 0 + SEGMENT_RUNTIME.baseHue, 5, _currentPalette, beatsin88(SEGMENT.beat88 * 2, 15, 255, SEGMENT_RUNTIME.timebase), SEGMENT.blendType);
+  return STRIP_MIN_DELAY;
+}
+
+
+/*
+ * Lights every LED in a random color. Changes all LED at the same time
+ * to new random colors.
+ */
+uint16_t WS2812FX::mode_multi_dynamic(void) {
+  #pragma message "Repair me!! too fast and no idea why..."
+  static uint32_t last = 0;
+  if(millis() > last)
   {
-    thishue = random8(curhue, qadd8(curhue,32));
+    for(uint16_t i=SEGMENT.start; i <= SEGMENT.stop; i++) {
+        
+      leds[i] = ColorFromPalette(_currentPalette, get_random_wheel_index(i>SEGMENT.start?i-1:i), _brightness, SEGMENT.blendType);
+        
+    }
+    last = millis() + ((BEAT88_MAX - SEGMENT.beat88)>>7);
   }
 
-  fade_out(96);
-  
-  for( int i = 0; i < numdots; i++) {
-    uint16_t pos = beatsin88(max(SEGMENT.beat88/2,1)+i*256+762,SEGMENT.start*16, SEGMENT.stop*16-width*16, SEGMENT_RUNTIME.timebase);
-    drawFractionalBar(pos, width, _currentPalette, curhue, _brightness);
-    curhue += (32-random8(64)) + SEGMENT_RUNTIME.baseHue;
-  }
+  return STRIP_MIN_DELAY; //(BEAT88_MAX - SEGMENT.beat88) / 256;
+}
+
+
+/*
+ * Waving brightness over the complete strip.
+ */
+uint16_t WS2812FX::mode_fill_bright(void) {
+  fill_palette(&leds[SEGMENT.start], (SEGMENT_LENGTH), beat88(max((SEGMENT.beat88/56),2), SEGMENT_RUNTIME.timebase), 
+      max(255/SEGMENT_LENGTH+1,1), _currentPalette, beatsin88(max(SEGMENT.beat88/112,1), 16, 255, SEGMENT_RUNTIME.timebase),SEGMENT.blendType);
   return STRIP_MIN_DELAY;
 }
 
-uint16_t WS2812FX::mode_inoise8_mover_twinkle(void) {
-  return this->mode_inoise8_mover_func(true);
-}
-
-uint16_t WS2812FX::mode_inoise8_mover(void) {
-  return this->mode_inoise8_mover_func(false);
-}
-
-uint16_t WS2812FX::mode_inoise8_mover_func(bool sparks) {
-  uint16_t xscale = 30;                                         
-  uint16_t yscale = 30;
-  const uint16_t width = 6; //max(SEGMENT.beat88/256,1);
-  static uint16_t dist = 1234;
-  uint8_t locn = inoise8(xscale, dist+yscale);       
-  uint16_t pixlen = map(locn,0,255,SEGMENT.start*16, SEGMENT.stop*16-width*16);
-  
-  uint8_t colormove = quadwave8(map(beat88(SEGMENT.beat88, SEGMENT_RUNTIME.timebase), 0, 65535, 0, 255)) + SEGMENT_RUNTIME.baseHue;
-
-  fade_out(48);
-  
-  drawFractionalBar(pixlen, width, _currentPalette, pixlen / 64 + colormove); //, beatsin88(max(SEGMENT.beat88/2,1),200 % _brightness, _brightness, SEGMENT_RUNTIME.timebase));
-  
-  dist += beatsin88(SEGMENT.beat88,1,6, SEGMENT_RUNTIME.timebase);  
-
-  if(sparks) addSparks(10, true, false);
-
-  return STRIP_MIN_DELAY;
-}
 
 uint16_t WS2812FX::mode_firework(void){
   const uint8_t dist = 1;
@@ -1344,29 +1395,6 @@ uint16_t WS2812FX::mode_firework(void){
     leds[lind] = ColorFromPalette(_currentPalette, cind  , 255, SEGMENT.blendType);
   }
   return STRIP_MIN_DELAY; // (BEAT88_MAX - SEGMENT.beat88) / 256; // STRIP_MIN_DELAY;
-}
-
-/*
- * Lights every LED in a random color. Changes all LED at the same time
- * to new random colors.
- */
-uint16_t WS2812FX::mode_multi_dynamic(void) {
-  for(uint16_t i=SEGMENT.start; i <= SEGMENT.stop; i++) {
-    
-    leds[i] = ColorFromPalette(_currentPalette, get_random_wheel_index(i>SEGMENT.start?i-1:i), _brightness, SEGMENT.blendType);
-    
-  }
-  return (BEAT88_MAX - SEGMENT.beat88) / 256;
-}
-
-/*
- * Does the "standby-breathing" of well known i-Devices. Fixed Speed.
- * Use mode "fade" if you like to have something similar with a different speed.
- */
-uint16_t WS2812FX::mode_breath(void) {
-  
-  fill_palette(&leds[SEGMENT.start], SEGMENT_LENGTH, 0 + SEGMENT_RUNTIME.baseHue, 5, _currentPalette, beatsin88(SEGMENT.beat88, 15, 255, SEGMENT_RUNTIME.timebase), SEGMENT.blendType);
-  return STRIP_MIN_DELAY;
 }
 
 /*
