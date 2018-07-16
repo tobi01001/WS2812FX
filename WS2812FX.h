@@ -112,8 +112,7 @@ enum MODES {
   FX_MODE_PLASMA,
   FX_MODE_JUGGLE_PAL,
   FX_MODE_CONFETTI,
-  // needs rework, currently not used
-  // FX_MODE_FILL_BEAT ,
+  FX_MODE_FILL_BEAT ,
   FX_MODE_FILL_WAVE ,
   FX_MODE_DOT_BEAT,
   FX_MODE_TO_INNER,
@@ -295,8 +294,7 @@ class WS2812FX {
       _mode[FX_MODE_PLASMA]                  = &WS2812FX::mode_plasma;
       _mode[FX_MODE_JUGGLE_PAL]              = &WS2812FX::mode_juggle_pal;
       _mode[FX_MODE_CONFETTI]                = &WS2812FX::mode_confetti;
-      // needs rework, currently not used
-      // _mode[FX_MODE_FILL_BEAT]               = &WS2812FX::mode_fill_beat;
+      _mode[FX_MODE_FILL_BEAT]               = &WS2812FX::mode_fill_beat;
       _mode[FX_MODE_DOT_BEAT]                = &WS2812FX::mode_dot_beat;
       _mode[FX_MODE_TO_INNER]                = &WS2812FX::mode_to_inner;
       _mode[FX_MODE_FILL_BRIGHT]             = &WS2812FX::mode_fill_bright;
@@ -315,8 +313,7 @@ class WS2812FX {
       _name[FX_MODE_PLASMA ]                    = F("Plasma Effect");
       _name[FX_MODE_JUGGLE_PAL]                 = F("Juggle Moving Pixels");
       _name[FX_MODE_CONFETTI]                   = F("Random Confetti");
-      // Needs rework, currently not used
-      //_name[FX_MODE_FILL_BEAT]                  = F("Color Fill Beat");
+      _name[FX_MODE_FILL_BEAT]                  = F("Color Fill Beat");
       _name[FX_MODE_DOT_BEAT]                   = F("Moving Dots");
       _name[FX_MODE_MULTI_DYNAMIC]              = F("Multi Dynamic");
       _name[FX_MODE_RAINBOW]                    = F("Rainbow");
@@ -504,6 +501,7 @@ class WS2812FX {
     }
 
     inline uint8_t getTwinkleDensity(void) { return _segments[0].twinkleDensity; }
+    inline uint8_t getMaxFPS(void) { return _fps; }
 
     boolean
       isRunning(void);
