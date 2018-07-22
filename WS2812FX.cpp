@@ -258,11 +258,17 @@ void WS2812FX::service() {
     //EVERY_N_MILLISECONDS(SEGMENT.hueTime)
     if(now > SEGMENT_RUNTIME.nextHue)
     {
-      if(SEGMENT.reverse)
-        SEGMENT_RUNTIME.baseHue -= SEGMENT.deltaHue;
+      if(!SEGMENT.hueTime)
+      {
+        SEGMENT_RUNTIME.baseHue = SEGMENT.deltaHue;
+      }
       else
-        SEGMENT_RUNTIME.baseHue += SEGMENT.deltaHue;
-        
+      {
+        if(SEGMENT.reverse)
+          SEGMENT_RUNTIME.baseHue--; // -= SEGMENT.deltaHue;
+        else
+          SEGMENT_RUNTIME.baseHue++; // += SEGMENT.deltaHue;
+      }
       SEGMENT_RUNTIME.nextHue = now + SEGMENT.hueTime;
     }
 
