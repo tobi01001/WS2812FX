@@ -115,6 +115,8 @@ enum MODES {
   FX_MODE_FILL_BEAT ,
   FX_MODE_FILL_WAVE ,
   FX_MODE_DOT_BEAT,
+  FX_MODE_DOT_COL_WIPE,
+  FX_MODE_COLOR_WIPE,
   FX_MODE_TO_INNER,
   FX_MODE_BREATH,
   FX_MODE_MULTI_DYNAMIC ,
@@ -296,6 +298,8 @@ class WS2812FX {
       _mode[FX_MODE_CONFETTI]                = &WS2812FX::mode_confetti;
       _mode[FX_MODE_FILL_BEAT]               = &WS2812FX::mode_fill_beat;
       _mode[FX_MODE_DOT_BEAT]                = &WS2812FX::mode_dot_beat;
+      _mode[FX_MODE_DOT_COL_WIPE]            = &WS2812FX::mode_dot_col_move;
+      _mode[FX_MODE_COLOR_WIPE]              = &WS2812FX::mode_col_wipe;
       _mode[FX_MODE_TO_INNER]                = &WS2812FX::mode_to_inner;
       _mode[FX_MODE_FILL_BRIGHT]             = &WS2812FX::mode_fill_bright;
       _mode[FX_MODE_FIREWORK]                = &WS2812FX::mode_firework;
@@ -315,6 +319,8 @@ class WS2812FX {
       _name[FX_MODE_CONFETTI]                   = F("Random Confetti");
       _name[FX_MODE_FILL_BEAT]                  = F("Color Fill Beat");
       _name[FX_MODE_DOT_BEAT]                   = F("Moving Dots");
+      _name[FX_MODE_DOT_COL_WIPE]               = F("Moving Dots Color Wipe");
+      _name[FX_MODE_COLOR_WIPE]                 = F("Color Wipe");
       _name[FX_MODE_MULTI_DYNAMIC]              = F("Multi Dynamic");
       _name[FX_MODE_RAINBOW]                    = F("Rainbow");
       _name[FX_MODE_RAINBOW_CYCLE]              = F("Rainbow Cycle");
@@ -546,7 +552,7 @@ class WS2812FX {
     void
       strip_off(void),
       fade_out(uint8_t fadeB),
-      drawFractionalBar(int pos16, int width, const CRGBPalette16 &pal, uint8_t cindex, uint8_t max_bright),
+      drawFractionalBar(int pos16, int width, const CRGBPalette16 &pal, uint8_t cindex, uint8_t max_bright, bool mixColor),
       coolLikeIncandescent( CRGB& c, uint8_t phase),
       addSparks(uint8_t probability, bool onBlackOnly, bool white);
     
@@ -562,6 +568,9 @@ class WS2812FX {
       mode_fill_bright(void),
       mode_to_inner(void),
       mode_dot_beat(void),
+      mode_dot_beat_base(uint8_t fade),
+      mode_dot_col_move(void),
+      mode_col_wipe(void),
       mode_fill_beat(void),
       mode_confetti(void),
       mode_juggle_pal(void),
@@ -665,7 +674,7 @@ class WS2812FX {
       _triggered;
 
     uint8_t
-      get_random_wheel_index(uint8_t),
+      get_random_wheel_index(uint8_t, uint8_t),
       _new_mode,
       _volts,
       _currentPaletteNum,

@@ -419,7 +419,7 @@ inline uint16_t WS2812FX::ease16InOutCubic( uint16_t i) {
    * The bar width is specified in whole pixels.
    * Arguably, this is the interesting code. 
    */
-void WS2812FX::drawFractionalBar(int pos16, int width, const CRGBPalette16 &pal, uint8_t cindex, uint8_t max_bright = 255) {
+void WS2812FX::drawFractionalBar(int pos16, int width, const CRGBPalette16 &pal, uint8_t cindex, uint8_t max_bright = 255, bool mixColors=true) {
 
   int i = pos16 / 16; // convert from pos to raw pixel number
   
@@ -448,6 +448,7 @@ void WS2812FX::drawFractionalBar(int pos16, int width, const CRGBPalette16 &pal,
   // For a bar of width "N", the code has to consider "N+1" pixel positions,
   // which is why the "<= width" below instead of "< width".
   uint8_t bright;
+  bool mix = true;
   for( int n = 0; n <= width; n++) {
     if(n == 0) {
       // first pixel in the bar
@@ -458,14 +459,31 @@ void WS2812FX::drawFractionalBar(int pos16, int width, const CRGBPalette16 &pal,
     } else {
       // middle pixels
       bright = max_bright;
+      mix = false;
     }
  
     CRGB newColor;
     if(i<=SEGMENT.stop && i >= SEGMENT.start)
     {
-      newColor = leds[i] | ColorFromPalette(pal, cindex, bright, SEGMENT.blendType); 
-      // we blend based on the "baseBeat"
-      nblend(leds[i], newColor, qadd8(SEGMENT.beat88>>8, 24));
+      if(mixColors)
+      {
+        newColor = leds[i] | ColorFromPalette(pal, cindex, bright, SEGMENT.blendType); 
+         // we blend based on the "baseBeat"
+        nblend(leds[i], newColor, qadd8(SEGMENT.beat88>>8, 24));
+      }
+      else
+      {
+        if(mix)
+        {
+          newColor = leds[i] | ColorFromPalette(pal, cindex, max_bright, SEGMENT.blendType); 
+          nblend(leds[i], newColor, qadd8(SEGMENT.beat88>>8, 24));
+        }
+        else
+        {
+          leds[i] = ColorFromPalette(pal, cindex, max_bright, SEGMENT.blendType); 
+        }
+        
+      }
     }
     i++;
   }
@@ -474,7 +492,7 @@ void WS2812FX::drawFractionalBar(int pos16, int width, const CRGBPalette16 &pal,
 /*
  * Returns a new, random wheel index with a minimum distance of 42 from pos.
  */
-uint8_t WS2812FX::get_random_wheel_index(uint8_t pos) {
+uint8_t WS2812FX::get_random_wheel_index(uint8_t pos, uint8_t dist = 42) {
   uint8_t r = 0;
   uint8_t d = 0;
 
@@ -1230,8 +1248,9 @@ uint16_t WS2812FX::mode_fill_wave(void) {
 /*
  * 3 "dots / small bars" moving with different 
  * wave functions and different speed.
+ * fading can be specified separate to create several effects...
  */
-uint16_t WS2812FX::mode_dot_beat(void) {
+uint16_t WS2812FX::mode_dot_beat_base(uint8_t fade) {
   static uint16_t beats[] = { 
      max( (uint16_t)((SEGMENT.beat88 / random8(1, 3)) * random8(3,6)) , SEGMENT.beat88), 
      max( (uint16_t)((SEGMENT.beat88 / random8(1, 3)) * random8(3,6)) , SEGMENT.beat88), 
@@ -1254,12 +1273,12 @@ uint16_t WS2812FX::mode_dot_beat(void) {
   const uint8_t width = 2;//max(SEGMENT_LENGTH/15, 2);
   
   static uint8_t coff[] = { 
-                            random8(SEGMENT_RUNTIME.baseHue, 32 + SEGMENT_RUNTIME.baseHue), 
-                            random8(SEGMENT_RUNTIME.baseHue, 32 + SEGMENT_RUNTIME.baseHue), 
-                            random8(SEGMENT_RUNTIME.baseHue, 32 + SEGMENT_RUNTIME.baseHue)
+                            random8(0,   85 ), 
+                            random8(85,  170), 
+                            random8(170, 255)
                           };
 
-  fade_out(64);
+  fade_out(fade);
 
 
   for(uint8_t i=0; i< 3; i++)
@@ -1268,11 +1287,11 @@ uint16_t WS2812FX::mode_dot_beat(void) {
     switch (i)
     {
       case 0:
-        cled = map(triwave16(beat88(beats[i], timebase[i])), 0, 65535, SEGMENT.start*16, SEGMENT.stop*16-width*16);
+        cled = map(triwave16  (beat88(beats[i], timebase[i])), 0, 65535, SEGMENT.start*16, SEGMENT.stop*16-width*16);
         
       break;
       case 1:
-        cled = map(quadwave16(beat88(beats[i], timebase[i])), 0, 65535, SEGMENT.start*16, SEGMENT.stop*16-width*16);
+        cled = map(quadwave16 (beat88(beats[i], timebase[i])), 0, 65535, SEGMENT.start*16, SEGMENT.stop*16-width*16);
         
       break;
       case 2:
@@ -1280,7 +1299,7 @@ uint16_t WS2812FX::mode_dot_beat(void) {
         
       break;
       default:
-        cled = map(quadwave16(beat88(beats[i], timebase[i])), 0, 65535, SEGMENT.start*16, SEGMENT.stop*16-width*16);
+        cled = map(quadwave16 (beat88(beats[i], timebase[i])), 0, 65535, SEGMENT.start*16, SEGMENT.stop*16-width*16);
         
       break;
     }
@@ -1299,21 +1318,73 @@ uint16_t WS2812FX::mode_dot_beat(void) {
       if(beats[i] <= 256) beats[i] = 256;
       if(beats[i] >= 65535-512) beats[i] = 65535-512;
       
-      coff[i] = random8(SEGMENT_RUNTIME.baseHue, 64 + SEGMENT_RUNTIME.baseHue);
+      coff[i] = get_random_wheel_index(coff[i]); //random8(coff[i], 255) + rnd_hue;
     }
     else
     {
       newbase[i] = true;
     }
 
-    cind = coff[i] + map(cled/16, SEGMENT.start, SEGMENT.stop , 0, 255);
+    cind = coff[i]; // + map(cled/16, SEGMENT.start, SEGMENT.stop , 0, 255);
 
-    drawFractionalBar(cled, width, _currentPalette, cind, _brightness);
+    drawFractionalBar(cled, width, _currentPalette, cind, _brightness, false);
    
   }
   return STRIP_MIN_DELAY;
 }
 
+uint16_t WS2812FX::mode_dot_beat(void)
+{
+  return mode_dot_beat_base(64);
+}
+
+uint16_t WS2812FX::mode_dot_col_move(void)
+{
+  return mode_dot_beat_base(0);
+}
+
+/* 
+ * random color wipe
+ */
+uint16_t WS2812FX::mode_col_wipe(void)
+{
+  uint16_t i = beatsin88(SEGMENT.beat88, SEGMENT.start, SEGMENT.stop, SEGMENT_RUNTIME.timebase);
+  static uint8_t cind = 0;
+  static bool newcolor = false;
+  static uint16_t prev  = i;
+  if(prev > i)
+  {
+    for(uint16_t n = i+1; n <= prev; n++)
+    {
+      leds[n] = ColorFromPalette(_currentPalette, cind, _brightness, SEGMENT.blendType);
+    }
+  }
+  else if (prev < i)
+  {
+    for(uint16_t n = prev; n < i; n++)
+    {
+      leds[n] = ColorFromPalette(_currentPalette, cind, _brightness, SEGMENT.blendType);
+    }
+  }
+  CRGB newCol = ColorFromPalette(_currentPalette, cind, _brightness, SEGMENT.blendType);
+  nblend(leds[i], newCol, qadd8(SEGMENT.beat88>>8, 192));
+  prev = i;
+
+  if(i == SEGMENT.start || i == SEGMENT.stop)
+  {
+    if(newcolor)
+    {
+      cind = get_random_wheel_index(cind, 24);
+      newcolor = false;
+    }
+  }
+  else
+  {
+    newcolor = true;
+  }
+
+  return STRIP_MIN_DELAY;
+}
 
 /*
  * Pulsing to the inner middle from both ends..
