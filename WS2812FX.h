@@ -116,7 +116,10 @@ enum MODES {
   FX_MODE_FILL_WAVE ,
   FX_MODE_DOT_BEAT,
   FX_MODE_DOT_COL_WIPE,
-  FX_MODE_COLOR_WIPE,
+  FX_MODE_COLOR_WIPE_SAWTOOTH,
+  FX_MODE_COLOR_WIPE_SINE,
+  FX_MODE_COLOR_WIPE_QUAD,
+  FX_MODE_COLOR_WIPE_TRIWAVE,
   FX_MODE_TO_INNER,
   FX_MODE_BREATH,
   FX_MODE_MULTI_DYNAMIC ,
@@ -229,15 +232,52 @@ class WS2812FX {
     } segment;
 
   // segment runtime parameters
+
+  // to save some memory, all the "static" variables are now in unions
+  // terrible to read but saving quite some ram.
+  // other option would be to have dynamic effects (effect classes)
+  // but thats risky because of memory leaks....
   typedef struct segment_runtime {
-    uint32_t      timebase;
-    uint32_t      counter_mode_step;
-    unsigned long next_time;
-    uint16_t      aux_param;
+    bool          modeinit;
+    union nb {
+      bool        newBase[3];
+      bool        trigger;
+      bool        newcolor;
+    } nb;
+    union co {
+      uint8_t     coff[3];
+      uint8_t     thishue;
+      uint8_t     cind;
+      uint8_t     last_index;
+    } co;
     uint8_t       baseHue;
+    union b16 {
+      uint16_t    beats[3];
+      struct p {
+        uint16_t    sPseudotime;
+        uint16_t    sLastMillis;
+        uint16_t    sHue16;
+      } p;
+      struct e {
+        uint16_t  beat;
+        uint16_t  oldbeat;
+        uint16_t  p_lerp;
+      } e;
+      uint16_t    beat;
+      uint16_t    dist;
+      uint16_t    prev;
+    } b16;
+    uint16_t      oldVal;
+    union tb {
+      uint32_t    last;
+      uint32_t    timebase;
+      uint32_t    timebases[3];
+    } tb;
+    uint32_t      counter_mode_step;
     uint32_t      nextHue;
     uint32_t      nextAuto;
     uint32_t      nextPalette;
+    uint32_t      next_time;
   } segment_runtime;
 
   public:
@@ -253,7 +293,7 @@ class WS2812FX {
       _bleds = new CRGB[num_leds];
       leds = new CRGB[num_leds]; //CRGB[NUM_LEDS];
 
-      setBlurValue(128);
+      setBlurValue(255);
 
       FastLED.addLeds<WS2812,LED_PIN, GRB>(_bleds, num_leds);//NUM_LEDS);
       FastLED.setCorrection(colc); //TypicalLEDStrip);
@@ -299,7 +339,12 @@ class WS2812FX {
       _mode[FX_MODE_FILL_BEAT]               = &WS2812FX::mode_fill_beat;
       _mode[FX_MODE_DOT_BEAT]                = &WS2812FX::mode_dot_beat;
       _mode[FX_MODE_DOT_COL_WIPE]            = &WS2812FX::mode_dot_col_move;
-      _mode[FX_MODE_COLOR_WIPE]              = &WS2812FX::mode_col_wipe;
+      _mode[FX_MODE_COLOR_WIPE_SAWTOOTH]     = &WS2812FX::mode_col_wipe_sawtooth;
+      _mode[FX_MODE_COLOR_WIPE_SINE]         = &WS2812FX::mode_col_wipe_sine;
+      _mode[FX_MODE_COLOR_WIPE_QUAD]         = &WS2812FX::mode_col_wipe_quad;
+      _mode[FX_MODE_COLOR_WIPE_TRIWAVE]      = &WS2812FX::mode_col_wipe_triwave;
+      
+
       _mode[FX_MODE_TO_INNER]                = &WS2812FX::mode_to_inner;
       _mode[FX_MODE_FILL_BRIGHT]             = &WS2812FX::mode_fill_bright;
       _mode[FX_MODE_FIREWORK]                = &WS2812FX::mode_firework;
@@ -320,7 +365,10 @@ class WS2812FX {
       _name[FX_MODE_FILL_BEAT]                  = F("Color Fill Beat");
       _name[FX_MODE_DOT_BEAT]                   = F("Moving Dots");
       _name[FX_MODE_DOT_COL_WIPE]               = F("Moving Dots Color Wipe");
-      _name[FX_MODE_COLOR_WIPE]                 = F("Color Wipe");
+      _name[FX_MODE_COLOR_WIPE_SAWTOOTH]        = F("Color Wipe Sawtooth");
+      _name[FX_MODE_COLOR_WIPE_SINE]            = F("Color Wipe Sine");
+      _name[FX_MODE_COLOR_WIPE_QUAD]            = F("Color Wipe Quad");
+      _name[FX_MODE_COLOR_WIPE_TRIWAVE]         = F("Color Wipe Triwave");
       _name[FX_MODE_MULTI_DYNAMIC]              = F("Multi Dynamic");
       _name[FX_MODE_RAINBOW]                    = F("Rainbow");
       _name[FX_MODE_RAINBOW_CYCLE]              = F("Rainbow Cycle");
@@ -401,7 +449,7 @@ class WS2812FX {
 
       RESET_RUNTIME;
 
-      SEGMENT_RUNTIME.timebase = millis();
+      SEGMENT_RUNTIME.tb.timebase= millis();
       SEGMENT_RUNTIME.baseHue += DEFAULT_DELTAHUE;
     }
   
@@ -486,6 +534,7 @@ class WS2812FX {
     inline void setBlurValue(uint8_t blur)
     {
       _segments[0].blur = blur;
+      _pblur = blur;
     }
 
     inline void setAutoplayDuration(uint16_t duration)
@@ -570,7 +619,11 @@ class WS2812FX {
       mode_dot_beat(void),
       mode_dot_beat_base(uint8_t fade),
       mode_dot_col_move(void),
-      mode_col_wipe(void),
+      mode_col_wipe_sawtooth(void),
+      mode_col_wipe_sine(void),
+      mode_col_wipe_quad(void),
+      mode_col_wipe_triwave(void),
+      mode_col_wipe_func(uint8_t mode),
       mode_fill_beat(void),
       mode_confetti(void),
       mode_juggle_pal(void),
@@ -680,6 +733,7 @@ class WS2812FX {
       _currentPaletteNum,
       _targetPaletteNum,
       _blend,
+      _pblur,
       _brightness;
 
     const __FlashStringHelper*
