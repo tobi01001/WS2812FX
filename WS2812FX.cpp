@@ -1998,6 +1998,90 @@ uint16_t WS2812FX::mode_softtwinkles(void) {
   return STRIP_MIN_DELAY;
 } 
 
+
+uint16_t WS2812FX::quadbeat(uint16_t in)
+{
+  in = in & 0x3FFF;
+  in = map(in, 0, 0x3FFF, 0, 65535);
+  return (in>>8)*(in>>8);
+}
+
+/*
+ * Shooting Star...
+ * 
+ */
+uint16_t WS2812FX::mode_shooting_star()
+{
+  
+  fadeToBlackBy(leds, SEGMENT_LENGTH>5?SEGMENT_LENGTH-5:SEGMENT_LENGTH, (SEGMENT.beat88>>8)|0x80);
+  blur1d(&leds[SEGMENT.stop-5], 6, 100);
+
+  uint16_t pos;
+  static uint8_t cind[] = {0,32,64,128};
+  static boolean new_cind[] = {1,1,1,1};
+  //uint16_t factor = (SEGMENT.beat88>>10) * (SEGMENT.beat88>>10);
+  float factor = ((SEGMENT.beat88/1000) * (SEGMENT.beat88/1000));
+  
+  if(factor<1) factor=1;
+  
+  uint16_t timebase = SEGMENT.beat88/factor;
+
+  if(SEGMENT.beat88<0x2000)
+  {
+    for(uint8_t i = 0; i<4; i++)
+    {
+      pos = quadbeat(beat88(SEGMENT.beat88, SEGMENT_RUNTIME.tb.timebase + i * timebase));
+      
+      pos = map(pos, 0, 65535, SEGMENT.start*16, SEGMENT.stop*16);
+
+      drawFractionalBar(pos, 2, _currentPalette, cind[i], _brightness); 
+
+      if(pos/16 > (SEGMENT.stop - 5))
+      {
+        leds[pos/16] += CRGB(96,96,96);
+        if(new_cind[i]) 
+        {
+          cind[i] = get_random_wheel_index(cind[i], 32);
+        }
+        new_cind[i] = false;
+      }
+      else
+      {
+        new_cind[i] = true;
+      }
+
+    }
+  }
+  else
+  {
+    pos = quadbeat(beat88(SEGMENT.beat88));
+    pos = map(pos, 0, 65535, SEGMENT.start*16, SEGMENT.stop*16);
+
+    drawFractionalBar(pos, 2, _currentPalette, cind[0], _brightness); 
+
+    if(pos/16 > (SEGMENT.stop - 5))
+    {
+      leds[pos/16] += CRGB(96,96,96);
+      if(new_cind[0]) 
+      {
+        cind[0] = get_random_wheel_index(cind[0], 32);
+      }
+      new_cind[0] = false;
+    }
+    else
+    {
+      new_cind[0] = true;
+    }
+  }
+  
+  
+  return STRIP_MIN_DELAY;
+
+}
+
+
+
+
 /*
  * Custom mode
  */
