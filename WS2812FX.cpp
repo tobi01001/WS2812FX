@@ -2012,73 +2012,196 @@ uint16_t WS2812FX::quadbeat(uint16_t in)
  */
 uint16_t WS2812FX::mode_shooting_star()
 {
-  
-  fadeToBlackBy(leds, SEGMENT_LENGTH>5?SEGMENT_LENGTH-5:SEGMENT_LENGTH, (SEGMENT.beat88>>8)|0x80);
-  blur1d(&leds[SEGMENT.stop-5], 6, 100);
+  // could actually be shorted by a fair amount of double / redundant code below.
+  // but does currently not hurt.
+
+
+  // code does not work on very short strips
+  if(SEGMENT_LENGTH<5) return STRIP_MIN_DELAY;
 
   uint16_t pos;
+  // we will "shoot" 4 bars and need arrays to 
+  // "remember the different values"
   static uint8_t cind[] = {0,32,64,128};
   static boolean new_cind[] = {1,1,1,1};
-  //uint16_t factor = (SEGMENT.beat88>>10) * (SEGMENT.beat88>>10);
+  
+  // factor could be uint8_t as well  int for performance
+  // however, on ESP8266 this works quite well (and is local to this effect)
   float factor = ((SEGMENT.beat88/1000) * (SEGMENT.beat88/1000));
   
-  if(factor<1) factor=1;
+  // but small factors  will be ignored
+  if(factor<0.1) factor=0.1;
   
+  // as we use the beat88 funtion to calculate the 
+  // position in time, we need different timebases 
+  // for different "bars"
   uint16_t timebase = SEGMENT.beat88/factor;
 
-  if(SEGMENT.beat88<0x2000)
+  // should work in both directions
+  if(SEGMENT.reverse)
   {
-    for(uint8_t i = 0; i<4; i++)
-    {
-      pos = quadbeat(beat88(SEGMENT.beat88, SEGMENT_RUNTIME.tb.timebase + i * timebase));
-      
-      pos = map(pos, 0, 65535, SEGMENT.start*16, SEGMENT.stop*16);
-
-      drawFractionalBar(pos, 2, _currentPalette, cind[i], _brightness); 
-
-      if(pos/16 > (SEGMENT.stop - 5))
-      {
-        leds[pos/16] += CRGB(96,96,96);
-        if(new_cind[i]) 
-        {
-          cind[i] = get_random_wheel_index(cind[i], 32);
-        }
-        new_cind[i] = false;
-      }
-      else
-      {
-        new_cind[i] = true;
-      }
-
-    }
+    // normal fade for the bar being shot
+    fadeToBlackBy(&leds[5], SEGMENT_LENGTH-5, (SEGMENT.beat88>>8)|0x80);
+    // and some blur at the end (gives the effect of a kind of hit)
+    blur1d(leds, 6, 100);
   }
   else
   {
+    // same for normal direction
+    fadeToBlackBy(leds, SEGMENT_LENGTH>5?SEGMENT_LENGTH-5:SEGMENT_LENGTH, (SEGMENT.beat88>>8)|0x80);
+    blur1d(&leds[SEGMENT.stop-5], 6, 100);
+  }
+  
+  // if the speed is higher than this, it makes no sense to calculate more...
+  if(SEGMENT.beat88<0x2000)
+  {
+    // calculate the 4 positions based on timebase
+    for(uint8_t i = 0; i<4; i++)
+    {
+      pos = quadbeat(beat88(SEGMENT.beat88, SEGMENT_RUNTIME.tb.timebase + i * timebase));
+
+      if(SEGMENT.reverse) pos = 65535 - pos;
+
+      pos = map(pos, 0, 65535, SEGMENT.start*16, SEGMENT.stop*16);
+
+      //we use the fractional bar and 16 brghtness values per pixel 
+      drawFractionalBar(pos, 2, _currentPalette, cind[i], _brightness); 
+
+      // for reverse mode, we go from high to low
+      if(SEGMENT.reverse)
+      {
+        // therefore, we brighten up the lower pixels
+        if(pos/16 < (SEGMENT.start + 4))
+        {
+          leds[pos/16] += CRGB(64,64,64);
+          // if we are at the end, we also need a new color for the next run.
+          if(new_cind[i]) 
+          {
+            cind[i] = get_random_wheel_index(cind[i], 32);
+          }
+          new_cind[i] = false;
+        }
+        else
+        {
+          new_cind[i] = true;
+        }
+      }
+      // the same for the normal direction
+      else
+      {
+        if(pos/16 > (SEGMENT.stop - 4))
+        {
+          leds[pos/16] += CRGB(64,64,64);
+          if(new_cind[i]) 
+          {
+            cind[i] = get_random_wheel_index(cind[i], 32);
+          }
+          new_cind[i] = false;
+        }
+        else
+        {
+          new_cind[i] = true;
+        }
+      }
+    }
+  }
+  // for higher speeds we calculate just one bar
+  else
+  {
     pos = quadbeat(beat88(SEGMENT.beat88));
+
+    if(SEGMENT.reverse) pos = 65535 - pos;
+
     pos = map(pos, 0, 65535, SEGMENT.start*16, SEGMENT.stop*16);
 
     drawFractionalBar(pos, 2, _currentPalette, cind[0], _brightness); 
 
-    if(pos/16 > (SEGMENT.stop - 5))
+    if(SEGMENT.reverse)
+      {
+        if(pos/16 < (SEGMENT.start + 4))
+        {
+          leds[pos/16] += CRGB(64,64,64);
+          if(new_cind[0]) 
+          {
+            cind[0] = get_random_wheel_index(cind[0], 32);
+          }
+          new_cind[0] = false;
+        }
+        else
+        {
+          new_cind[0] = true;
+        }
+      }
+      else
+      {
+        if(pos/16 > (SEGMENT.stop - 4))
+        {
+          leds[pos/16] += CRGB(64,64,64);
+          if(new_cind[0]) 
+          {
+            cind[0] = get_random_wheel_index(cind[0], 32);
+          }
+          new_cind[0] = false;
+        }
+        else
+        {
+          new_cind[0] = true;
+        }
+      }
+  }
+  return STRIP_MIN_DELAY;
+}
+
+uint16_t WS2812FX::mode_beatsin_glow(void)
+{
+
+  #pragma warning "to be optimized...."
+
+  uint16_t pos = 0;
+  const uint8_t maxdots = 4;
+  const uint8_t separator = SEGMENT_LENGTH / 4; 
+  static uint16_t theta[] = {(65535/maxdots)*0+random16(1000),
+                             (65535/maxdots)*1+random16(1000),
+                             (65535/maxdots)*2+random16(1000),
+                             (65535/maxdots)*3+random16(1000) };
+  for(uint8_t i=0; i<maxdots; i++)
+  {
+    theta[i] = theta[i] + (100-random8(200));
+    pos = beatsin88(SEGMENT.beat88, SEGMENT.start*16, SEGMENT.stop*16, 0, theta[i]);
+    drawFractionalBar(pos, 2, _currentPalette, (255/maxdots)*i+SEGMENT_RUNTIME.baseHue, _brightness, true);
+    if((pos/16 >= separator*1-1 && pos/16 <= separator*1+1) || 
+       (pos/16 >= separator*2-1 && pos/16 <= separator*2+1) ||
+       (pos/16 >= separator*3-1 && pos/16 <= separator*3+1) ||
+       (pos/16 >= separator*4-2 && pos/16 <= separator*4 ) ||
+       (pos/16 >= 0  && pos/16 < 2))
     {
       leds[pos/16] += CRGB(96,96,96);
-      if(new_cind[0]) 
-      {
-        cind[0] = get_random_wheel_index(cind[0], 32);
-      }
-      new_cind[0] = false;
+    }
+  }
+  if(SEGMENT_LENGTH<15) return STRIP_MIN_DELAY;
+
+  for(uint8_t i=0; i<4; i++)
+  {
+    if(i == 0)
+    {
+      blur1d(&leds[separator*i  ], 4, 172);
     }
     else
     {
-      new_cind[0] = true;
+      blur1d(&leds[separator*i-2], 4, 172);
     }
+    
   }
-  
-  
+  blur1d(&leds[separator*4-2], 2, 172);
+
+
+  fadeToBlackBy(&leds[separator*0+2],separator*1-2 - separator*0+2 , 32);// (SEGMENT.beat88>>8)|0x80);
+  fadeToBlackBy(&leds[separator*1+2],separator*2-2 - separator*1+2 , 32);// (SEGMENT.beat88>>8)|0x80);
+  fadeToBlackBy(&leds[separator*2+2],separator*3-2 - separator*2+2 , 32);// (SEGMENT.beat88>>8)|0x80);
+  fadeToBlackBy(&leds[separator*3+2],separator*4-2 - separator*3+2 , 32);// (SEGMENT.beat88>>8)|0x80);
+
   return STRIP_MIN_DELAY;
-
 }
-
 
 
 

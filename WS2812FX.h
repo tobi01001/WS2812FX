@@ -147,6 +147,7 @@ enum MODES {
   FX_MODE_FIRE_FLICKER_INTENSE,
   FX_MODE_BUBBLE_SORT,
   FX_MODE_SHOOTING_STAR,
+  FX_MODE_BEATSIN_GLOW,
   FX_MODE_CUSTOM,
 
   // has to be the final entry!
@@ -353,6 +354,7 @@ class WS2812FX {
       _mode[FX_MODE_FILL_WAVE]               = &WS2812FX::mode_fill_wave;
       _mode[FX_MODE_BUBBLE_SORT]             = &WS2812FX::mode_bubble_sort;
       _mode[FX_MODE_SHOOTING_STAR]           = &WS2812FX::mode_shooting_star;
+      _mode[FX_MODE_BEATSIN_GLOW]            = &WS2812FX::mode_beatsin_glow;
       _mode[FX_MODE_CUSTOM]                  = &WS2812FX::mode_custom;
       
       _name[FX_MODE_STATIC]                     = F("Static");
@@ -398,6 +400,7 @@ class WS2812FX {
       _name[FX_MODE_FIRE_FLICKER_INTENSE]       = F("Fire Flicker (intense)");
       _name[FX_MODE_BUBBLE_SORT]                = F("Bubble Sort");
       _name[FX_MODE_SHOOTING_STAR]              = F("Shooting Star");
+      _name[FX_MODE_BEATSIN_GLOW]               = F("Beat sine glows");
       _name[FX_MODE_CUSTOM]                     = F("Custom");
 
       _pal_name[RAINBOW_PAL]        = F("Rainbow Colors");
@@ -673,6 +676,7 @@ class WS2812FX {
       mode_twinkle_fox( void),
       mode_softtwinkles(void),
       mode_shooting_star(void),
+      mode_beatsin_glow(void),
       quadbeat(uint16_t in),
       mode_custom(void);
 
