@@ -2154,51 +2154,65 @@ uint16_t WS2812FX::mode_shooting_star()
 
 uint16_t WS2812FX::mode_beatsin_glow(void)
 {
+  static uint8_t num_bars = 0;
+  static uint16_t *beats;
+  static uint16_t *theta;
+  static uint16_t basebeat = SEGMENT.beat88;
 
-  #pragma warning "to be optimized...."
+  uint16_t lim = (SEGMENT.beat88*10)/100;
+
+  if(num_bars != SEGMENT.twinkleSpeed || basebeat != SEGMENT.beat88)
+  {
+    num_bars = SEGMENT.twinkleSpeed;
+    basebeat = SEGMENT.beat88;
+    delete [] beats;
+    delete [] theta;
+    beats = new uint16_t[num_bars];
+    theta = new uint16_t[num_bars];
+    for(uint8_t i = 0; i<num_bars; i++)
+    {
+      beats[i] = SEGMENT.beat88 + lim/2 - random16(lim);
+      theta[i] = (65535 / num_bars) + (65535 / (4*num_bars)) - random16(65535 / (2*num_bars));
+    }
+  }
+
+  uint8_t cind = SEGMENT_RUNTIME.baseHue;
+  const uint8_t delta_cind = 255 / SEGMENT.twinkleSpeed;
+
+  fadeToBlackBy(leds, SEGMENT_LENGTH, (SEGMENT.beat88 >> 8) | 32);
 
   uint16_t pos = 0;
-  const uint8_t maxdots = 4;
-  const uint8_t separator = SEGMENT_LENGTH / 4; 
-  static uint16_t theta[] = {(65535/maxdots)*0+random16(1000),
-                             (65535/maxdots)*1+random16(1000),
-                             (65535/maxdots)*2+random16(1000),
-                             (65535/maxdots)*3+random16(1000) };
-  for(uint8_t i=0; i<maxdots; i++)
+
+  for(uint8_t i= 0; i < SEGMENT.twinkleSpeed; i++)
   {
-    theta[i] = theta[i] + (100-random8(200));
-    pos = beatsin88(SEGMENT.beat88, SEGMENT.start*16, SEGMENT.stop*16, 0, theta[i]);
-    drawFractionalBar(pos, 2, _currentPalette, (255/maxdots)*i+SEGMENT_RUNTIME.baseHue, _brightness, true);
-    if((pos/16 >= separator*1-1 && pos/16 <= separator*1+1) || 
-       (pos/16 >= separator*2-1 && pos/16 <= separator*2+1) ||
-       (pos/16 >= separator*3-1 && pos/16 <= separator*3+1) ||
-       (pos/16 >= separator*4-2 && pos/16 <= separator*4 ) ||
-       (pos/16 >= 0  && pos/16 < 2))
+    int16_t si = sin16(beat88(beats[i], theta[i]));
+    if(si == 32767 || si == -32767)
     {
-      leds[pos/16] += CRGB(96,96,96);
+      beats[i] = beats[i] + (SEGMENT.beat88*10)/200 - random16((SEGMENT.beat88*10)/100);
+      theta[i] = theta[i] + 8-random8(16);
     }
+    pos = map((65535>>1) + si, 0, 65535, SEGMENT.start*16, SEGMENT.stop*16);
+    drawFractionalBar(pos, 2, _currentPalette, cind + i * delta_cind, _brightness, true);
   }
-  if(SEGMENT_LENGTH<15) return STRIP_MIN_DELAY;
 
-  for(uint8_t i=0; i<4; i++)
+  /* working variant... lets try something dynamic 
+  const uint16_t delta_theta = 65535 / SEGMENT.twinkleSpeed;
+  
+  uint16_t theta = beat88(SEGMENT.beat88, SEGMENT_RUNTIME.tb.timebase);
+  
+  uint16_t pos = 0;
+
+  uint8_t cind = SEGMENT_RUNTIME.baseHue;
+  const uint8_t delta_cind = 255 / SEGMENT.twinkleSpeed;
+
+  fadeToBlackBy(leds, SEGMENT_LENGTH, (SEGMENT.beat88 >> 8) | 8);
+
+  for(uint8_t i= 0; i < SEGMENT.twinkleSpeed; i++)
   {
-    if(i == 0)
-    {
-      blur1d(&leds[separator*i  ], 4, 172);
-    }
-    else
-    {
-      blur1d(&leds[separator*i-2], 4, 172);
-    }
-    
+    pos = map((65535>>1) + sin16(theta + i * delta_theta), 0, 65535, SEGMENT.start*16, SEGMENT.stop*16);
+    drawFractionalBar(pos, 2, _currentPalette, cind + i * delta_cind, _brightness, true);
   }
-  blur1d(&leds[separator*4-2], 2, 172);
-
-
-  fadeToBlackBy(&leds[separator*0+2],separator*1-2 - separator*0+2 , 32);// (SEGMENT.beat88>>8)|0x80);
-  fadeToBlackBy(&leds[separator*1+2],separator*2-2 - separator*1+2 , 32);// (SEGMENT.beat88>>8)|0x80);
-  fadeToBlackBy(&leds[separator*2+2],separator*3-2 - separator*2+2 , 32);// (SEGMENT.beat88>>8)|0x80);
-  fadeToBlackBy(&leds[separator*3+2],separator*4-2 - separator*3+2 , 32);// (SEGMENT.beat88>>8)|0x80);
+  */
 
   return STRIP_MIN_DELAY;
 }
