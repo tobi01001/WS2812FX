@@ -580,8 +580,11 @@ class WS2812FX {
       _blend = 0;
     }
 
+    
+
     inline uint8_t getTwinkleDensity(void) { return _segments[0].twinkleDensity; }
     inline uint8_t getMaxFPS(void) { return _fps; }
+    inline void    setMaxFPS(uint8_t fps) {  FastLED.setMaxRefreshRate(fps); _fps = fps; }
 
     boolean
       isRunning(void);
