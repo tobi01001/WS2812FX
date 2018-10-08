@@ -49,7 +49,7 @@
 #define STRIP_MIN_DELAY (1000/(STRIP_MAX_FPS))  
 #define STRIP_MAX_FPS _fps
 
-
+#define FASTLED_INTERNAL
 #include "FastLED.h"
 FASTLED_USING_NAMESPACE
 
@@ -211,28 +211,30 @@ class WS2812FX {
   // segment parameters
   public:
     typedef struct segment {
-      bool            reverse;
-      bool            autoplay;
-      bool            autoPal;
-      uint16_t        beat88;
-      uint16_t        start;
-      uint16_t        stop;
-      uint16_t        hueTime;
-      uint16_t        milliamps;
-      uint16_t        autoplayDuration;
-      uint16_t        autoPalDuration;
-      uint8_t         cooling;
-      uint8_t         sparking;
-      uint8_t         twinkleSpeed;
-      uint8_t         twinkleDensity;
-      uint8_t         mode;
-      uint8_t         deltaHue;
-      uint8_t         blur;
-      TBlendType      blendType;
-      //CRGBPalette16   cPalette;
-      //uint16_t        CRC;
+      bool             reverse;
+      bool             autoplay;
+      bool             autoPal;
+      uint16_t         beat88;
+      uint16_t         start;
+      uint16_t         stop;
+      uint16_t         hueTime;
+      uint16_t         milliamps;
+      uint16_t         autoplayDuration;
+      uint16_t         autoPalDuration;
+      uint8_t          cooling;
+      uint8_t          sparking;
+      uint8_t          twinkleSpeed;
+      uint8_t          twinkleDensity;
+      uint8_t          numBars;
+      uint8_t          mode;
+      uint8_t          deltaHue;
+      uint8_t          blur;
+      TBlendType       blendType;
+      ColorTemperature colorTemp;
+
     } segment;
 
+  
   // segment runtime parameters
 
   // to save some memory, all the "static" variables are now in unions
@@ -299,6 +301,7 @@ class WS2812FX {
 
       FastLED.addLeds<WS2812,LED_PIN, GRB>(_bleds, num_leds);//NUM_LEDS);
       FastLED.setCorrection(colc); //TypicalLEDStrip);
+      FastLED.setDither(0);
       _currentPalette = CRGBPalette16(CRGB::Black);
       
       FastLED.setMaxRefreshRate(fps);
@@ -447,6 +450,7 @@ class WS2812FX {
       _segments[0].sparking = 125;
       _segments[0].twinkleSpeed = 4;
       _segments[0].twinkleDensity = 4;
+      _segments[0].numBars = 6;
       _segments[0].milliamps = milliamps;
       
       _volts = volt;
@@ -500,6 +504,7 @@ class WS2812FX {
       setSegment(uint8_t n, uint16_t start, uint16_t stop, uint8_t mode, CRGBPalette16 pal, uint16_t beat88, bool reverse),
       setSegment(uint8_t n, uint16_t start, uint16_t stop, uint8_t mode, const uint32_t colors[], uint16_t beat88, bool reverse),
       setBlendType(TBlendType t),
+      setColorTemperature(uint8_t index),
       toggleBlendType(void),
       resetSegments();
 
@@ -529,6 +534,14 @@ class WS2812FX {
     }
 
     inline uint8_t getTwinkleSpeed(void) { return _segments[0].twinkleSpeed; }
+
+    inline void setNumBars(uint8_t numBars)
+    {
+      _segments[0].numBars = constrain(numBars, 1, max(LED_COUNT/10, 1));
+    }
+
+    inline uint8_t getNumBars(void) { return _segments[0].numBars; }
+    
 
     inline void setTwinkleDensity(uint8_t density)
     {
@@ -561,6 +574,12 @@ class WS2812FX {
       SEGMENT.hueTime = hueTime;
     }
 
+    inline void setTransition(void)
+    {
+      _transition = true;
+      _blend = 0;
+    }
+
     inline uint8_t getTwinkleDensity(void) { return _segments[0].twinkleDensity; }
     inline uint8_t getMaxFPS(void) { return _fps; }
 
@@ -572,6 +591,7 @@ class WS2812FX {
       getBrightness(void),
       getModeCount(void),
       getPalCount(void),
+      getColorTemp(void),
       getNumSegments(void);
 
     inline uint8_t getCurrentPaletteNumber(void) { return _currentPaletteNum; }
@@ -593,6 +613,8 @@ class WS2812FX {
 
     const __FlashStringHelper*
       getPalName(uint8_t p);
+
+    String getColorTempName(uint8_t index);
 
     WS2812FX::segment*
       getSegments(void);
