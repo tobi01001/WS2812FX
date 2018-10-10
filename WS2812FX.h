@@ -47,7 +47,7 @@
 #endif
 
 #define STRIP_MIN_DELAY (1000/(STRIP_MAX_FPS))  
-#define STRIP_MAX_FPS _fps
+#define STRIP_MAX_FPS _segments[0].fps
 
 #define FASTLED_INTERNAL
 #include "FastLED.h"
@@ -111,7 +111,7 @@ enum MODES {
   FX_MODE_TWINKLE_NOISEMOVER,
   FX_MODE_PLASMA,
   FX_MODE_JUGGLE_PAL,
-  FX_MODE_CONFETTI,
+//  FX_MODE_CONFETTI,
   FX_MODE_FILL_BEAT ,
   FX_MODE_FILL_WAVE ,
   FX_MODE_DOT_BEAT,
@@ -229,6 +229,7 @@ class WS2812FX {
       uint8_t          mode;
       uint8_t          deltaHue;
       uint8_t          blur;
+      uint8_t          fps;
       TBlendType       blendType;
       ColorTemperature colorTemp;
 
@@ -304,9 +305,6 @@ class WS2812FX {
       FastLED.setDither(0);
       _currentPalette = CRGBPalette16(CRGB::Black);
       
-      FastLED.setMaxRefreshRate(fps);
-      _fps = fps;
-      
       setTargetPalette(pal, Name);
 
       FastLED.clear(true);
@@ -340,7 +338,7 @@ class WS2812FX {
       _mode[FX_MODE_NOISEMOVER]              = &WS2812FX::mode_inoise8_mover;
       _mode[FX_MODE_PLASMA]                  = &WS2812FX::mode_plasma;
       _mode[FX_MODE_JUGGLE_PAL]              = &WS2812FX::mode_juggle_pal;
-      _mode[FX_MODE_CONFETTI]                = &WS2812FX::mode_confetti;
+    //  _mode[FX_MODE_CONFETTI]                = &WS2812FX::mode_confetti;
       _mode[FX_MODE_FILL_BEAT]               = &WS2812FX::mode_fill_beat;
       _mode[FX_MODE_DOT_BEAT]                = &WS2812FX::mode_dot_beat;
       _mode[FX_MODE_DOT_COL_WIPE]            = &WS2812FX::mode_dot_col_move;
@@ -368,7 +366,7 @@ class WS2812FX {
       _name[FX_MODE_TWINKLE_NOISEMOVER]         = F("Twinkle iNoise8 Mover");
       _name[FX_MODE_PLASMA ]                    = F("Plasma Effect");
       _name[FX_MODE_JUGGLE_PAL]                 = F("Juggle Moving Pixels");
-      _name[FX_MODE_CONFETTI]                   = F("Random Confetti");
+    //  _name[FX_MODE_CONFETTI]                   = F("Random Confetti");
       _name[FX_MODE_FILL_BEAT]                  = F("Color Fill Beat");
       _name[FX_MODE_DOT_BEAT]                   = F("Moving Dots");
       _name[FX_MODE_DOT_COL_WIPE]               = F("Moving Dots Color Wipe");
@@ -452,6 +450,9 @@ class WS2812FX {
       _segments[0].twinkleDensity = 4;
       _segments[0].numBars = 6;
       _segments[0].milliamps = milliamps;
+      _segments[0].fps = fps;
+      FastLED.setMaxRefreshRate(fps);
+      
       
       _volts = volt;
       FastLED.setMaxPowerInVoltsAndMilliamps(volt, milliamps);
@@ -583,8 +584,8 @@ class WS2812FX {
     
 
     inline uint8_t getTwinkleDensity(void) { return _segments[0].twinkleDensity; }
-    inline uint8_t getMaxFPS(void) { return _fps; }
-    inline void    setMaxFPS(uint8_t fps) {  FastLED.setMaxRefreshRate(fps); _fps = fps; }
+    inline uint8_t getMaxFPS(void) { return _segments[0].fps; }
+    inline void    setMaxFPS(uint8_t fps) {  FastLED.setMaxRefreshRate(fps); _segments[0].fps = fps; }
 
     boolean
       isRunning(void);
@@ -778,7 +779,6 @@ class WS2812FX {
 
     uint8_t _segment_index = 0;
     uint8_t _num_segments = 1;
-    uint8_t _fps;
     segment _segments[MAX_NUM_SEGMENTS]; 
     /*
     = { // SRAM footprint: 20 bytes per element
